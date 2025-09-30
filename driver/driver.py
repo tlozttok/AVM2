@@ -2,7 +2,8 @@
 
 
 from typing import Callable, Dict, List, Tuple, Optional
-from openai import OpenAI
+from openai import AsyncOpenAI
+import asyncio
 import os
 
 
@@ -153,7 +154,7 @@ class Agent:
     - input_message_keyword: 激活通道列表（触发Agent激活的通道）
     """
     
-    def __init__(self, id: str, prompt: str = ""):
+    def __init__(self, id: str, prompt: str = "", message_bus: 'MessageBus' = None):
         self.id = id
         self.prompt = prompt
         self.input_connections = InputConnections()
@@ -163,7 +164,8 @@ class Agent:
         self.input_message_keyword = []
         self.input_check_function:Callable[[List[Tuple[Keyword,Keyword]]],bool] = \
             self.default_input_check_function
-    
+        self.message_bus = message_bus
+        self.is_activating = False  # 防止重复激活
     def default_input_check_function(self,keywords:List[Tuple[Keyword,Keyword]])->bool:
         received_keywords = [k[1] for k in keywords]
         return all([k in received_keywords for k in self.input_message_keyword])
@@ -177,6 +179,12 @@ class Agent:
         pass
     
     def receive_message(self, message: AgentMessage, sender_id:str) -> None:
+        """同步接收消息（用于向后兼容）"""
+        # 在异步环境中，应该使用receive_message_async
+        asyncio.create_task(self.receive_message_async(message, sender_id))
+    
+    async def receive_message_async(self, message: AgentMessage, sender_id:str) -> None:
+        """异步接收消息"""
         input_channel = self.input_connections.get(sender_id)
         if input_channel:
             message.receiver_keyword = input_channel
@@ -185,16 +193,20 @@ class Agent:
         else:
             self.bg_message_cache.append(message)
             
-        if self.input_check_function([(message.sender_keyword,message.receiver_keyword) for message in self.input_message_cache]):
-            self.activate()
+        # 检查是否应该激活
+        if self.input_check_function([(msg.sender_keyword, msg.receiver_keyword) for msg in self.input_message_cache]):
+            if not self.is_activating:
+                self.is_activating = True
+                await self.activate_async()
+                self.is_activating = False
         
             
-    def send_message(self, raw_content: str):
+    async def send_message_async(self, raw_content: str):
         """
-        发送消息：
+        异步发送消息：
         1. 从原始内容中提取不同输出通道对应的消息
         2. 通过output_connections获取对应的接收者ID列表
-        3. 通过MessageBus发送消息
+        3. 通过MessageBus异步发送消息
         """
         # 解析原始内容，提取输出通道对应的消息
         channel_messages = self._parse_keyword_messages(raw_content)
@@ -213,11 +225,16 @@ class Agent:
                         receiver_keyword=None  # 接收者会在receive_message中设置
                     )
                     
-                    # 通过MessageBus发送消息
-                    # 这里需要访问MessageBus实例，可能需要通过参数传递或全局访问
-                    # 暂时使用注释说明
-                    # message_bus.send_message(self.id, message, receiver_id)
-                    print(f"发送消息: {self.id} -> {receiver_id}, 输出通道: {output_channel}, 内容: {content}")
+                    # 通过MessageBus异步发送消息
+                    if self.message_bus:
+                        await self.message_bus.send_message(self.id, message, receiver_id)
+                    else:
+                        print(f"警告: Agent {self.id} 未连接到消息总线，无法发送消息")
+    
+    def send_message(self, raw_content: str):
+        """同步发送消息（用于向后兼容）"""
+        # 在异步环境中，应该使用send_message_async
+        asyncio.create_task(self.send_message_async(raw_content))
     
     def _parse_keyword_messages(self, raw_content: str) -> Dict[Keyword, str]:
         """
@@ -255,8 +272,8 @@ class Agent:
             deduplicated_messages[(message.sender_keyword,message.receiver_keyword)] = message
         self.bg_message_cache = list(deduplicated_messages.values())
     
-    def activate(self):
-        """激活Agent，调用大模型API"""
+    async def activate_async(self):
+        """异步激活Agent，调用大模型API"""
         
         self.reduce()
         # 构建上下文
@@ -275,27 +292,33 @@ class Agent:
             return
             
         try:
-            # 初始化OpenAI客户端
-            client = OpenAI(
+            # 初始化异步OpenAI客户端
+            client = AsyncOpenAI(
                 api_key=os.environ.get("OPENAI_API_KEY"),
                 base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
             )
             
-            # 调用大模型API
-            response = client.chat.completions.create(
+            # 异步调用大模型API
+            response = await client.chat.completions.create(
                 model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
                 messages=messages,
                 max_tokens=1000,
                 temperature=0.7
             )
             
-            # 返回模型响应
-            content=response.choices[0].message.content
+            # 获取模型响应
+            content = response.choices[0].message.content
             
-            self.send_message(content)
+            # 异步发送响应消息
+            await self.send_message_async(content)
             
         except Exception as e:
             print(f"API调用失败: {e}")
+    
+    def activate(self):
+        """同步激活Agent（用于向后兼容）"""
+        # 在异步环境中，应该使用activate_async
+        asyncio.create_task(self.activate_async())
         
         
         
@@ -303,14 +326,60 @@ class Agent:
         
         
 class MessageBus:
-    agents:Dict[str, Agent]
+    """异步消息总线，管理Agent间的消息传递"""
     
     def __init__(self):
-        self.agents={}
+        self.agents: Dict[str, Agent] = {}
+        self.message_queue = asyncio.Queue()
+        self.is_running = False
+        self.processing_task = None
     
-    def send_message(self,sender_id:str, message:AgentMessage, receiver_id:str):
-        receiver = self.agents.get(receiver_id)
-        receiver.receive_message(message, sender_id)
+    def register_agent(self, agent: 'Agent'):
+        """注册Agent到消息总线"""
+        self.agents[agent.id] = agent
+    
+    async def send_message(self, sender_id: str, message: AgentMessage, receiver_id: str):
+        """异步发送消息到目标Agent"""
+        await self.message_queue.put((sender_id, message, receiver_id))
+    
+    async def process_messages(self):
+        """异步处理消息队列"""
+        self.is_running = True
+        while self.is_running:
+            try:
+                # 等待消息，设置超时避免无限阻塞
+                sender_id, message, receiver_id = await asyncio.wait_for(
+                    self.message_queue.get(), timeout=1.0
+                )
+                
+                receiver = self.agents.get(receiver_id)
+                if receiver:
+                    # 异步处理消息接收
+                    await receiver.receive_message_async(message, sender_id)
+                else:
+                    print(f"警告: 未找到接收者Agent: {receiver_id}")
+                    
+            except asyncio.TimeoutError:
+                # 超时，继续循环
+                continue
+            except Exception as e:
+                print(f"处理消息时出错: {e}")
+    
+    async def start(self):
+        """启动消息总线"""
+        self.processing_task = asyncio.create_task(self.process_messages())
+        print("消息总线已启动")
+    
+    async def stop(self):
+        """停止消息总线"""
+        self.is_running = False
+        if self.processing_task:
+            self.processing_task.cancel()
+            try:
+                await self.processing_task
+            except asyncio.CancelledError:
+                pass
+        print("消息总线已停止")
         
         
         
