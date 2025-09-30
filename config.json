@@ -1,0 +1,32 @@
+{
+  "system": {
+    "architecture": "Three-layer architecture: CoreLayer -> ExpressionLayer -> ExecutionLayer",
+    "context_management": {
+      "default_stateless": true,
+      "message_driven": true,
+      "lightweight_memory": false
+    },
+    "agent_activation_modes": [
+      {
+        "name": "subject_activation",
+        "description": "Agent actively pulls dependent information",
+        "use_case": "Main control tasks, process-driven"
+      },
+      {
+        "name": "passive_activation",
+        "description": "Responds after receiving messages or meeting conditions",
+        "use_case": "Event listening, exception handling"
+      },
+      {
+        "name": "trigger_activation",
+        "description": "Triggered by time, context, or internal signals association",
+        "use_case": "Brain-like 'suddenly remembering', cross-task transfer"
+      }
+    ]
+  },
+  "directories": {
+    "gene_library": "./CoreLayer/GeneLibrary",
+    "agent_network": "./ExpressionLayer/AgentNetwork",
+    "programming_world_model": "./ExecutionLayer/ProgrammingWorldModel"
+  }
+}
