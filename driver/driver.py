@@ -171,11 +171,9 @@ class Agent:
         return all([k in received_keywords for k in self.input_message_keyword])
     
     def sync_to_file(self)->None:
-        #  TODO: Implement
         pass
     
     def sync_from_file(self)->None:
-        #  TODO: Implement
         pass
     
     def receive_message(self, message: AgentMessage, sender_id:str) -> None:
@@ -381,5 +379,5 @@ class MessageBus:
                 pass
         print("消息总线已停止")
         
-        
-        
+    
+    
