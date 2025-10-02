@@ -5,6 +5,8 @@ from typing import Callable, Dict, List, Tuple, Optional
 from openai import AsyncOpenAI
 import asyncio
 import os
+import json
+import yaml
 
 
 type Keyword = str
@@ -170,11 +172,96 @@ class Agent:
         received_keywords = [k[1] for k in keywords]
         return all([k in received_keywords for k in self.input_message_keyword])
     
-    def sync_to_file(self)->None:
-        pass
+    def sync_to_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        将Agent状态同步到文件
+        使用人类可编辑的格式（YAML或JSON）
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        # 构建Agent数据
+        agent_data = {
+            "id": self.id,
+            "prompt": self.prompt,
+            "input_connections": self.input_connections.connections,
+            "output_connections": self.output_connections.connections,
+            "input_message_keyword": self.input_message_keyword,
+            "metadata": {
+                "type": "Agent",
+                "version": "1.0"
+            }
+        }
+        
+        try:
+            if format.lower() == "yaml":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
+            elif format.lower() == "json":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(agent_data, f, ensure_ascii=False, indent=2)
+            else:
+                raise ValueError(f"不支持的格式: {format}")
+            
+            print(f"✅ Agent '{self.id}' 已保存到文件: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 保存Agent '{self.id}' 到文件失败: {e}")
     
-    def sync_from_file(self)->None:
-        pass
+    def sync_from_file(self, file_path: str) -> None:
+        """
+        从文件加载Agent状态
+        支持YAML和JSON格式
+        """
+        if not os.path.exists(file_path):
+            print(f"❌ 文件不存在: {file_path}")
+            return
+        
+        try:
+            # 根据文件扩展名确定格式
+            if file_path.endswith('.yaml') or file_path.endswith('.yml'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = yaml.safe_load(f)
+            elif file_path.endswith('.json'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = json.load(f)
+            else:
+                # 默认尝试YAML，然后JSON
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = yaml.safe_load(f)
+                except:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = json.load(f)
+            
+            # 验证数据格式
+            if not isinstance(agent_data, dict) or "id" not in agent_data:
+                raise ValueError("无效的Agent数据格式")
+            
+            # 更新Agent状态
+            self.id = agent_data.get("id", self.id)
+            self.prompt = agent_data.get("prompt", self.prompt)
+            
+            # 更新连接
+            input_connections = agent_data.get("input_connections", {})
+            if isinstance(input_connections, dict):
+                self.input_connections.connections = input_connections
+            
+            output_connections = agent_data.get("output_connections", {})
+            if isinstance(output_connections, dict):
+                self.output_connections.connections = output_connections
+            
+            # 更新激活关键词
+            input_message_keyword = agent_data.get("input_message_keyword", [])
+            if isinstance(input_message_keyword, list):
+                self.input_message_keyword = input_message_keyword
+            
+            print(f"✅ Agent '{self.id}' 已从文件加载: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 从文件加载Agent失败: {e}")
+    
+
     
     def receive_message(self, message: AgentMessage, sender_id:str) -> None:
         """同步接收消息（用于向后兼容）"""

@@ -4,6 +4,9 @@
 
 import asyncio
 import time
+import json
+import yaml
+import os
 from typing import Dict, List, Set, Any
 from .driver import Agent, MessageBus
 
@@ -329,5 +332,101 @@ class AgentSystem:
             return f"{minutes}m {secs}s"
         else:
             return f"{secs}s"
+    
+    def load_agent_from_file(self, file_path: str) -> Agent:
+        """
+        从文件加载Agent并注册到系统
+        支持YAML和JSON格式
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+        
+        try:
+            # 根据文件扩展名确定格式
+            if file_path.endswith('.yaml') or file_path.endswith('.yml'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = yaml.safe_load(f)
+            elif file_path.endswith('.json'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = json.load(f)
+            else:
+                # 默认尝试YAML，然后JSON
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = yaml.safe_load(f)
+                except:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = json.load(f)
+            
+            # 验证数据格式
+            if not isinstance(agent_data, dict) or "id" not in agent_data:
+                raise ValueError("无效的Agent数据格式")
+            
+            # 检查Agent类型
+            agent_type = agent_data.get("metadata", {}).get("type", "Agent")
+            
+            # 创建Agent实例
+            agent_id = agent_data["id"]
+            prompt = agent_data.get("prompt", "")
+            
+            if agent_type == "Agent":
+                # 创建普通Agent
+                agent = Agent(agent_id, prompt, self.message_bus)
+            else:
+                # 对于系统接口Agent，需要专门的创建逻辑
+                # 这里可以扩展支持具体的系统接口Agent类型
+                agent = Agent(agent_id, prompt, self.message_bus)
+            
+            # 设置连接
+            input_connections = agent_data.get("input_connections", {})
+            if isinstance(input_connections, dict):
+                agent.input_connections.connections = input_connections
+            
+            output_connections = agent_data.get("output_connections", {})
+            if isinstance(output_connections, dict):
+                agent.output_connections.connections = output_connections
+            
+            # 设置激活关键词
+            input_message_keyword = agent_data.get("input_message_keyword", [])
+            if isinstance(input_message_keyword, list):
+                agent.input_message_keyword = input_message_keyword
+            
+            # 注册到系统
+            self.register_agent(agent)
+            
+            print(f"✅ 从文件加载并注册Agent: {agent_id}")
+            return agent
+            
+        except Exception as e:
+            print(f"❌ 从文件加载Agent失败: {e}")
+            raise
+    
+    def load_system_from_directory(self, directory_path: str) -> None:
+        """
+        从目录加载整个系统
+        加载目录中的所有Agent文件
+        """
+        if not os.path.exists(directory_path):
+            raise FileNotFoundError(f"目录不存在: {directory_path}")
+        
+        # 查找所有Agent文件
+        agent_files = []
+        for file_name in os.listdir(directory_path):
+            if file_name.endswith(('.yaml', '.yml', '.json')):
+                agent_files.append(os.path.join(directory_path, file_name))
+        
+        if not agent_files:
+            print(f"⚠️ 目录中没有找到Agent文件: {directory_path}")
+            return
+        
+        loaded_count = 0
+        for file_path in agent_files:
+            try:
+                self.load_agent_from_file(file_path)
+                loaded_count += 1
+            except Exception as e:
+                print(f"❌ 加载文件失败 {file_path}: {e}")
+        
+        print(f"✅ 从目录加载完成: {loaded_count}/{len(agent_files)} 个Agent成功加载")
 
 

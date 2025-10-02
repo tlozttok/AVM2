@@ -7,6 +7,8 @@
 
 from typing import List, Optional, Callable
 import asyncio
+import json
+import yaml
 from abc import ABC, abstractmethod
 from .driver import Agent, AgentMessage, MessageBus
 
@@ -108,6 +110,42 @@ class InputAgent(Agent):
     async def activate_async(self):
         """输入Agent不使用LLM激活"""
         pass
+    
+    def sync_to_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        系统输入Agent的持久化
+        包含输入Agent特有的属性
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        # 构建输入Agent数据
+        agent_data = {
+            "id": self.id,
+            "input_connections": self.input_connections.connections,
+            "output_connections": self.output_connections.connections,
+            "input_message_keyword": self.input_message_keyword,
+            "metadata": {
+                "type": "InputAgent",
+                "version": "1.0",
+                "is_running": self.is_running
+            }
+        }
+        
+        try:
+            if format.lower() == "yaml":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
+            elif format.lower() == "json":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(agent_data, f, ensure_ascii=False, indent=2)
+            else:
+                raise ValueError(f"不支持的格式: {format}")
+            
+            print(f"✅ InputAgent '{self.id}' 已保存到文件: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 保存InputAgent '{self.id}' 到文件失败: {e}")
 
 
 class OutputAgent(Agent):
@@ -165,6 +203,41 @@ class OutputAgent(Agent):
     def send_message(self, raw_content: str):
         """同步版本"""
         asyncio.create_task(self.send_message_async(raw_content))
+    
+    def sync_to_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        系统输出Agent的持久化
+        包含输出Agent特有的属性
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        # 构建输出Agent数据
+        agent_data = {
+            "id": self.id,
+            "input_connections": self.input_connections.connections,
+            "output_connections": self.output_connections.connections,
+            "input_message_keyword": self.input_message_keyword,
+            "metadata": {
+                "type": "OutputAgent",
+                "version": "1.0"
+            }
+        }
+        
+        try:
+            if format.lower() == "yaml":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
+            elif format.lower() == "json":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(agent_data, f, ensure_ascii=False, indent=2)
+            else:
+                raise ValueError(f"不支持的格式: {format}")
+            
+            print(f"✅ OutputAgent '{self.id}' 已保存到文件: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 保存OutputAgent '{self.id}' 到文件失败: {e}")
         
         
 class IOAgent(Agent):

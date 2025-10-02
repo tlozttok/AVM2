@@ -429,7 +429,7 @@ class SystemMonitorInputAgent(InputAgent):
 # 演示如何使用这些系统Agent
 async def demo_system_agents():
     """演示系统接口Agent的使用"""
-    from .driver import AgentSystem, AgentMessage
+    from ..driver.driver import AgentSystem, AgentMessage
     
     # 创建系统
     system = AgentSystem()
