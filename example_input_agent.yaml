@@ -1,0 +1,18 @@
+# 系统输入Agent配置文件
+# 人类可编辑的YAML格式
+
+id: sensor_input_agent
+input_connections: {}
+
+output_connections:
+  sensor_data: ["data_processor"]
+  alerts: ["alert_system"]
+
+input_message_keyword: []
+
+metadata:
+  type: InputAgent
+  version: "1.0"
+  description: "传感器数据输入Agent"
+  sensor_type: "temperature"
+  polling_interval: 5.0

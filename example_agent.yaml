@@ -1,0 +1,35 @@
+# 这是一个示例Agent配置文件
+# 人类可编辑的YAML格式，可以无代码修改系统
+
+id: example_agent
+prompt: |
+  你是一个问题分析Agent，负责分析用户输入的问题
+  并生成结构化的分析结果。
+  
+  你的任务包括：
+  - 理解用户问题的核心
+  - 分析问题的背景和上下文
+  - 识别关键要素和约束条件
+  - 生成结构化的分析报告
+
+input_connections:
+  user: user_input
+  system: system_commands
+  analyzer: analysis_results
+
+output_connections:
+  analysis: ["analyzer_agent"]
+  response: ["user_interface"]
+  report: ["report_generator"]
+
+input_message_keyword:
+  - user_input
+  - system_commands
+  - analysis_results
+
+metadata:
+  type: Agent
+  version: "1.0"
+  description: "问题分析Agent"
+  created: "2024-01-01"
+  author: "系统管理员"
