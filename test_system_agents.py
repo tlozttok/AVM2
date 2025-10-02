@@ -5,8 +5,9 @@
 
 import asyncio
 import os
-from driver.driver import AgentSystem
-from driver.system_agent_examples import AgentCreatorOutputAgent, SystemMonitorInputAgent
+from driver.async_system import AgentSystem
+from system_interface_agents.system_agent_examples import AgentCreatorOutputAgent, SystemMonitorInputAgent
+from driver.driver import AgentMessage
 
 async def test_system_agents():
     """测试系统接口Agent功能"""

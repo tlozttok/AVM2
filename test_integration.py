@@ -11,9 +11,10 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'driver'))
 
 try:
-    from driver import Agent, AgentMessage, MessageBus, AgentSystem
-    from system_agents import InputAgent, OutputAgent
-    from system_agent_examples import AgentCreatorOutputAgent, SystemMonitorInputAgent
+    from driver.driver import Agent, AgentMessage, MessageBus
+    from driver.async_system import AgentSystem
+    from driver.system_agents import InputAgent, OutputAgent
+    from system_interface_agents.system_agent_examples import AgentCreatorOutputAgent, SystemMonitorInputAgent
     print("✅ 所有模块导入成功")
 except ImportError as e:
     print(f"❌ 模块导入失败: {e}")

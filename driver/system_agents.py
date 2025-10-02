@@ -165,3 +165,52 @@ class OutputAgent(Agent):
     def send_message(self, raw_content: str):
         """同步版本"""
         asyncio.create_task(self.send_message_async(raw_content))
+        
+        
+class IOAgent(Agent):
+    """
+    InputAgent和OutputAgent的结合版本（抽象基类）
+    提供受控输入功能：接收特定格式的消息，进行查询或操作，然后返回结果
+    子类必须实现具体的查询处理方法
+    """
+    
+    def __init__(self, id: str, agent_system, prompt: str = "", message_bus: MessageBus = None):
+        super().__init__(id, prompt, message_bus)
+        self.agent_system = agent_system
+        self.query_handlers = {}
+    
+    @abstractmethod
+    def _process_query(self, query_content: str) -> str:
+        """
+        抽象方法：处理查询内容并返回响应
+        子类必须实现此方法来处理具体的查询逻辑
+        """
+        pass
+    
+    async def receive_message_async(self, message: AgentMessage, sender_id: str) -> None:
+        """异步接收消息并处理查询"""
+        input_channel = self.input_connections.get(sender_id)
+        if input_channel:
+            message.receiver_keyword = input_channel
+        
+        # 处理查询并生成响应
+        response = await self._process_query(message.content)
+        
+        # 发送响应
+        if response:
+            await self.send_message_async(response)
+    
+    # 重写激活方法，使用查询处理逻辑
+    async def activate_async(self):
+        """IOAgent的激活逻辑 - 处理输入消息并返回查询结果"""
+        if not self.input_message_cache:
+            return
+        
+        # 处理所有输入消息
+        for message in self.input_message_cache:
+            response = await self._process_query(message.content)
+            if response:
+                await self.send_message_async(response)
+        
+        # 清空输入缓存
+        self.input_message_cache = []
