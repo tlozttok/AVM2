@@ -1,0 +1,13 @@
+id: agent_creator_agent
+input_connections: 
+  genesis_agent: 创建Agent请求
+
+output_connections:
+
+input_message_keyword: [创建Agent请求]
+
+metadata:
+  type: OutputAgent
+  class_name: "AgentCreatorOutputAgent"
+  version: "1.0"
+  description: "创建Agent输出Agent"

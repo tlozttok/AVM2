@@ -1,0 +1,14 @@
+id: system_monitor_agent
+input_connections: {}
+
+output_connections:
+  system_report: ["genesis_agent"]
+
+input_message_keyword: []
+
+metadata:
+  type: InputAgent
+  class_name: "SystemMonitorInputAgent"
+  version: "1.0"
+  description: "系统监测输入Agent"
+  polling_interval: 5.0
