@@ -10,6 +10,7 @@ import os
 from typing import Dict, List, Set, Any
 from .driver import Agent, MessageBus
 
+SYMBOLIC_REAL = None
 
 class AgentSystem:
     """异步Agent系统管理器"""
