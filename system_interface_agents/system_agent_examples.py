@@ -7,6 +7,7 @@ import time
 from typing import Optional, Dict, Any
 from driver.system_agents import InputAgent, OutputAgent
 from driver.driver import Agent, AgentMessage, MessageBus
+from driver.async_system import SYMBOLIC_REAL
 
 
 class AgentCreatorOutputAgent(OutputAgent):
@@ -16,9 +17,9 @@ class AgentCreatorOutputAgent(OutputAgent):
     根据接收到的语义描述创建新的普通Agent
     """
     
-    def __init__(self, id: str, agent_system, message_bus=None):
+    def __init__(self, id: str, message_bus=None):
         super().__init__(id, message_bus)
-        self.agent_system = agent_system  # 需要访问系统来注册新Agent
+        self.agent_system = SYMBOLIC_REAL  # 需要访问系统来注册新Agent
         
         # 语义转换验证器
         self.semantic_validators = {
@@ -343,9 +344,9 @@ class SystemMonitorInputAgent(InputAgent):
     提供实在界→想象界的转换
     """
     
-    def __init__(self, id: str, agent_system, report_interval: float = 10.0, message_bus=None):
+    def __init__(self, id: str, report_interval: float = 10.0, message_bus=None):
         super().__init__(id, message_bus)
-        self.agent_system = agent_system
+        self.agent_system = SYMBOLIC_REAL
         self.report_interval = report_interval  # 报告间隔（秒）
         self.last_report_time = 0
     

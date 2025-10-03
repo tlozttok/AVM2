@@ -2,10 +2,11 @@
 AVM2 系统主程序 - 使用eval动态创建Agent
 """
 
+
 import glob
 import yaml
 from driver.driver import Agent
-from driver.async_system import AgentSystem
+from driver.async_system import AgentSystem, SYMBOLIC_REAL
 from system_interface_agents.system_agent_examples import AgentCreatorOutputAgent, SystemMonitorInputAgent
 
 
@@ -14,6 +15,8 @@ async def main():
     print("🚀 启动 AVM2 Agent 系统...")
     
     system = AgentSystem()
+    global SYMBOLIC_REAL
+    SYMBOLIC_REAL=system
     
     # 遍历Agents文件夹中的普通Agent
     agent_files = glob.glob("Agents/*.yaml")
