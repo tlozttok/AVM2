@@ -37,16 +37,6 @@ class AgentSystem:
         await self.message_bus.stop()
         print("Agent系统已停止")
     
-    async def send_initial_message(self, sender_id: str, content: str, receiver_id: str):
-        """发送初始消息启动系统"""
-        from .driver import AgentMessage
-        message = AgentMessage(
-            sender_keyword="init",
-            content=content,
-            receiver_keyword=None
-        )
-        await self.message_bus.send_message(sender_id, message, receiver_id)
-        print(f"发送初始消息: {sender_id} -> {receiver_id}")
     
     # ===== 分层状态查询方法 =====
     

@@ -368,8 +368,9 @@ class SystemMonitorInputAgent(InputAgent):
         return input_data is not None
     
     def format_message(self, input_data: str) -> str:
-        """格式化系统报告消息"""
-        return f"系统状态报告:\n{input_data}"
+        """格式化系统报告消息为Agent消息格式"""
+        # 使用标准的Agent消息格式：<keyword>content</keyword>
+        return f"<system_report>{input_data}</system_report>"
     
     def _collect_system_info(self) -> str:
         """收集详细的系统信息"""

@@ -9,6 +9,7 @@ from typing import List, Optional, Callable
 import asyncio
 import json
 import yaml
+import os
 from abc import ABC, abstractmethod
 from .driver import Agent, AgentMessage, MessageBus
 
@@ -127,8 +128,7 @@ class InputAgent(Agent):
             "input_message_keyword": self.input_message_keyword,
             "metadata": {
                 "type": "InputAgent",
-                "version": "1.0",
-                "is_running": self.is_running
+                "version": "1.0"
             }
         }
         
@@ -146,6 +146,61 @@ class InputAgent(Agent):
             
         except Exception as e:
             print(f"❌ 保存InputAgent '{self.id}' 到文件失败: {e}")
+            
+    def sync_from_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        从文件加载系统输入Agent状态
+        支持YAML和JSON格式
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        if not os.path.exists(file_path):
+            print(f"❌ 文件不存在: {file_path}")
+            return
+        
+        try:
+            # 根据文件扩展名确定格式
+            if file_path.endswith('.yaml') or file_path.endswith('.yml'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = yaml.safe_load(f)
+            elif file_path.endswith('.json'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = json.load(f)
+            else:
+                # 默认尝试YAML，然后JSON
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = yaml.safe_load(f)
+                except:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = json.load(f)
+            
+            # 验证数据格式
+            if not isinstance(agent_data, dict) or "id" not in agent_data:
+                raise ValueError("无效的InputAgent数据格式")
+            
+            # 更新InputAgent状态
+            self.id = agent_data.get("id", self.id)
+            
+            # 更新连接
+            input_connections = agent_data.get("input_connections", {})
+            if isinstance(input_connections, dict):
+                self.input_connections.connections = input_connections
+            
+            output_connections = agent_data.get("output_connections", {})
+            if isinstance(output_connections, dict):
+                self.output_connections.connections = output_connections
+            
+            # 更新激活关键词
+            input_message_keyword = agent_data.get("input_message_keyword", [])
+            if isinstance(input_message_keyword, list):
+                self.input_message_keyword = input_message_keyword
+            
+            print(f"✅ InputAgent '{self.id}' 已从文件加载: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 从文件加载InputAgent失败: {e}")
 
 
 class OutputAgent(Agent):
@@ -238,6 +293,61 @@ class OutputAgent(Agent):
             
         except Exception as e:
             print(f"❌ 保存OutputAgent '{self.id}' 到文件失败: {e}")
+    
+    def sync_from_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        从文件加载系统输出Agent状态
+        支持YAML和JSON格式
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        if not os.path.exists(file_path):
+            print(f"❌ 文件不存在: {file_path}")
+            return
+        
+        try:
+            # 根据文件扩展名确定格式
+            if file_path.endswith('.yaml') or file_path.endswith('.yml'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = yaml.safe_load(f)
+            elif file_path.endswith('.json'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = json.load(f)
+            else:
+                # 默认尝试YAML，然后JSON
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = yaml.safe_load(f)
+                except:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = json.load(f)
+            
+            # 验证数据格式
+            if not isinstance(agent_data, dict) or "id" not in agent_data:
+                raise ValueError("无效的OutputAgent数据格式")
+            
+            # 更新OutputAgent状态
+            self.id = agent_data.get("id", self.id)
+            
+            # 更新连接
+            input_connections = agent_data.get("input_connections", {})
+            if isinstance(input_connections, dict):
+                self.input_connections.connections = input_connections
+            
+            output_connections = agent_data.get("output_connections", {})
+            if isinstance(output_connections, dict):
+                self.output_connections.connections = output_connections
+            
+            # 更新激活关键词
+            input_message_keyword = agent_data.get("input_message_keyword", [])
+            if isinstance(input_message_keyword, list):
+                self.input_message_keyword = input_message_keyword
+            
+            print(f"✅ OutputAgent '{self.id}' 已从文件加载: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 从文件加载OutputAgent失败: {e}")
         
         
 class IOAgent(Agent):
@@ -287,3 +397,95 @@ class IOAgent(Agent):
         
         # 清空输入缓存
         self.input_message_cache = []
+    
+    def sync_to_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        IOAgent的持久化
+        包含IOAgent特有的属性
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        # 构建IOAgent数据
+        agent_data = {
+            "id": self.id,
+            "prompt": self.prompt,
+            "input_connections": self.input_connections.connections,
+            "output_connections": self.output_connections.connections,
+            "input_message_keyword": self.input_message_keyword,
+            "metadata": {
+                "type": "IOAgent",
+                "version": "1.0"
+            }
+        }
+        
+        try:
+            if format.lower() == "yaml":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
+            elif format.lower() == "json":
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(agent_data, f, ensure_ascii=False, indent=2)
+            else:
+                raise ValueError(f"不支持的格式: {format}")
+            
+            print(f"✅ IOAgent '{self.id}' 已保存到文件: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 保存IOAgent '{self.id}' 到文件失败: {e}")
+    
+    def sync_from_file(self, file_path: str = None, format: str = "yaml") -> None:
+        """
+        从文件加载IOAgent状态
+        支持YAML和JSON格式
+        """
+        if file_path is None:
+            file_path = f"{self.id}.{format}"
+        
+        if not os.path.exists(file_path):
+            print(f"❌ 文件不存在: {file_path}")
+            return
+        
+        try:
+            # 根据文件扩展名确定格式
+            if file_path.endswith('.yaml') or file_path.endswith('.yml'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = yaml.safe_load(f)
+            elif file_path.endswith('.json'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    agent_data = json.load(f)
+            else:
+                # 默认尝试YAML，然后JSON
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = yaml.safe_load(f)
+                except:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        agent_data = json.load(f)
+            
+            # 验证数据格式
+            if not isinstance(agent_data, dict) or "id" not in agent_data:
+                raise ValueError("无效的IOAgent数据格式")
+            
+            # 更新IOAgent状态
+            self.id = agent_data.get("id", self.id)
+            self.prompt = agent_data.get("prompt", self.prompt)
+            
+            # 更新连接
+            input_connections = agent_data.get("input_connections", {})
+            if isinstance(input_connections, dict):
+                self.input_connections.connections = input_connections
+            
+            output_connections = agent_data.get("output_connections", {})
+            if isinstance(output_connections, dict):
+                self.output_connections.connections = output_connections
+            
+            # 更新激活关键词
+            input_message_keyword = agent_data.get("input_message_keyword", [])
+            if isinstance(input_message_keyword, list):
+                self.input_message_keyword = input_message_keyword
+            
+            print(f"✅ IOAgent '{self.id}' 已从文件加载: {file_path}")
+            
+        except Exception as e:
+            print(f"❌ 从文件加载IOAgent失败: {e}")

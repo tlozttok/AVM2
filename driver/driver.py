@@ -144,7 +144,7 @@ class AgentMessage:
         self.receiver_keyword = receiver_keyword
         
     def to_str(self)->str:
-        return f"{self.sender_keyword} -> {self.receiver_keyword}: {self.content}"
+        return f"{self.sender_keyword} - {self.receiver_keyword}: {self.content}"
 
 class Agent:
     """
