@@ -2,21 +2,21 @@
 AVM2 系统主程序 - 使用eval动态创建Agent
 """
 
+import asyncio
 
 import glob
 import yaml
 from driver.driver import Agent
-from driver.async_system import AgentSystem, SYMBOLIC_REAL
+from driver.async_system import AgentSystem
 from system_interface_agents.system_agent_examples import AgentCreatorOutputAgent, SystemMonitorInputAgent
-
+from driver import async_system
 
 async def main():
     """主程序入口"""
     print("🚀 启动 AVM2 Agent 系统...")
     
     system = AgentSystem()
-    global SYMBOLIC_REAL
-    SYMBOLIC_REAL=system
+    async_system.SYMBOLIC_REAL=system
     
     # 遍历Agents文件夹中的普通Agent
     agent_files = glob.glob("Agents/*.yaml")
@@ -44,18 +44,19 @@ async def main():
     print("🔌 启动消息总线...")
     await system.start()
     
-    print("🎯 AVM2 系统已启动并运行中...")
-    print("系统将在5秒后自动停止...")
-    
-    import asyncio
-    await asyncio.sleep(5)
-    
-    # 停止系统
-    print("🛑 停止系统...")
-    await system.stop()
-    print("✅ AVM2 系统已停止")
+    try:
+        # 保持程序运行，等待消息
+        print("📡 系统正在运行，等待消息...")
+        print("按 Ctrl+C 停止系统")
+        
+        # 创建一个永久等待的future
+        await asyncio.Future()
+        
+    except KeyboardInterrupt:
+        print("\n🛑 收到停止信号，正在关闭系统...")
+    finally:
+        await system.stop()
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
