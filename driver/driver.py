@@ -18,14 +18,14 @@ class UserMessage:
         self.content = ""
     
     def integrate(self, agent_message:List['AgentMessage']):
-        self.content += " ".join([message.content for message in agent_message])
+        self.content += "\n".join([message.to_str() for message in agent_message])
         
 
 class SystemMessage:
     content:str
     
     def __init__(self):
-        self.content = "你是一个Agent系统中的Agent，基本行为是接受其他Agent的信息，根据后面的提示，进行信息处理，输出一个信息。你的输出会被处理并发送到和你连接的其他Agent，其他Agent也和你一样，不过连接不同。每个连接有两个关键词，发送端的关键词（输出关键词）和接收端的关键词（输入关键词）。你的输出格式应该是“<think>思考过程</think><keyword1>关键词一的输出</keyword1><keyword2>关键词二的输出</keyword>...”。以下是你的输出关键词列表：\n"
+        self.content = "你是一个Agent系统中的Agent，基本行为是接受其他Agent的信息，根据后面的提示，进行信息处理，输出一个信息。其他Agent的信息会以'{发送端关键词} - {接收端关键词}:{内容}'的格式输入。你的输出会被处理并发送到和你连接的其他Agent，其他Agent也和你一样，不过连接不同。每个连接有两个关键词，发送端的关键词（输出关键词）和接收端的关键词（输入关键词）。你的输出格式应该是“<think>思考过程</think><keyword1>关键词一的输出</keyword1><keyword2>关键词二的输出</keyword>...”。以下是你的输出关键词列表：\n"
         
     def integrate_keywords(self, keywords:List[Keyword]):
         """集成输出关键词列表"""
@@ -40,7 +40,7 @@ class SystemMessage:
     def integrate(self, agent_message:List['AgentMessage']):
         """集成其他Agent的实时信息"""
         if agent_message:
-            self.content += "\n\n以下是其他Agent的实时信息：\n" + "\n".join([message.content for message in agent_message])
+            self.content += "\n\n以下是其他Agent的实时信息：\n" + "\n".join([message.to_str() for message in agent_message])
 
 class Context:
     content:Tuple[SystemMessage, UserMessage]
