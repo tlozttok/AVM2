@@ -340,8 +340,8 @@ class Agent:
         
         # 解析所有关键词标签
         import re
-        pattern = r'<(\w+)>(.*?)</\1>'
-        matches = re.findall(pattern, content_after_think)
+        pattern = r'<([\w\u4e00-\u9fff]+)>(.*?)</\1>'
+        matches = re.findall(pattern, content_after_think, re.DOTALL)
         
         for keyword, content in matches:
             # 检查该关键词是否在output_connections中
@@ -432,10 +432,7 @@ class MessageBus:
         self.is_running = True
         while self.is_running:
             try:
-                # 等待消息，设置超时避免无限阻塞
-                sender_id, message, receiver_id = await asyncio.wait_for(
-                    self.message_queue.get(), timeout=1.0
-                )
+                sender_id, message, receiver_id = await self.message_queue.get()
                 
                 receiver = self.agents.get(receiver_id)
                 if receiver:
@@ -443,10 +440,10 @@ class MessageBus:
                     await receiver.receive_message_async(message, sender_id)
                 else:
                     print(f"警告: 未找到接收者Agent: {receiver_id}")
-                    
-            except asyncio.TimeoutError:
-                # 超时，继续循环
-                continue
+            except asyncio.CancelledError:
+                # 任务被取消，正常退出
+                print("🔌 消息总线处理循环被取消")
+                break        
             except Exception as e:
                 print(f"处理消息时出错: {e}")
     
@@ -464,7 +461,7 @@ class MessageBus:
                 await self.processing_task
             except asyncio.CancelledError:
                 pass
-        print("消息总线已停止")
+        print("🔌 消息总线已停止")
         
     
     

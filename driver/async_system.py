@@ -32,6 +32,22 @@ class AgentSystem:
         """启动整个系统"""
         await self.message_bus.start()
         print(f"Agent系统已启动，包含 {len(self.agents)} 个Agent")
+        
+        # 筛选InputAgent启动它们的输入循环
+        input_agents = []
+        for agent in self.agents.values():
+            # 检查是否是InputAgent类型（通过检查是否有start_input方法）
+            if hasattr(agent, 'start_input') and callable(agent.start_input):
+                input_agents.append(agent)
+        
+        # 启动所有InputAgent的输入循环
+        for input_agent in input_agents:
+            try:
+                await input_agent.start_input()
+                print(f"✅ 启动InputAgent: {input_agent.id}")
+            except Exception as e:
+                print(f"❌ 启动InputAgent {input_agent.id} 失败: {e}")
+        
     
     async def stop(self):
         """停止系统"""

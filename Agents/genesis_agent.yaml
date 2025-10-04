@@ -56,7 +56,7 @@ output_connections:
   创建Agent: ["agent_creator_agent"]
 
 input_message_keyword:
-  - system_monitor_agent
+  - 来自系统监测Agent（system_monitor_agent）的系统报告
 
 metadata:
   type: Agent
