@@ -4,50 +4,109 @@
 
 ## 当前开发状态
 
-**开发阶段**: 早期实现阶段  
-**当前焦点**: 从微Agent激活机制开始开发  
-**技术栈**: Python  
-**架构**: 三注册架构（象征界、想象界、实在界）
+**开发阶段**: 基础框架实现完成  
+**当前焦点**: 系统Agent重构与实时同步机制  
+**技术栈**: Python + OpenAI API  
+**架构**: 三界分离架构（实在界、想象界、象征界）
 
 ## 项目结构
 
 ```
 AVM2/
-├── driver/           # 核心驱动模块（当前开发重点）
-│   └── driver.py     # Agent框架和激活机制
-├── ARCHITECTURE.md   # 系统架构设计
-├── Start.md         # 项目理念和理论基础
-├── config.json      # 系统配置
-└── README.md        # 项目说明
+├── driver/                    # 核心驱动模块
+│   ├── driver.py             # Agent基类、消息总线、文件同步
+│   ├── system_agents.py      # 系统Agent抽象类
+│   └── async_system.py       # 异步系统
+├── system_interface_agents/  # 系统Agent具体实现
+│   ├── agent_creator_output_agent.py    # Agent创建器
+│   └── system_monitor_input_agent.py    # 系统监控器
+├── Agents/                   # Agent配置
+│   ├── genesis_agent.yaml    # 初始Agent
+│   └── SystemAgents/         # 系统Agent配置
+├── main.py                   # 系统入口（支持调试模式）
+├── TODO.md                   # 开发计划
+├── QWEN.md                   # 项目知识库
+├── ARCHITECTURE.md           # 系统架构设计
+├── Start.md                  # 项目理念和理论基础
+└── README.md                 # 项目说明
 ```
 
-## 开发路线
+## 核心特性
 
-1. **微Agent框架** (当前进行中)
-   - Agent激活机制
-   - 消息传递系统
-   - 上下文管理
+### 🚀 语义自举机制
+- **三界分离**: 实在界（物理世界反馈）、想象界（语义处理）、象征界（知识库）
+- **微Agent架构**: RNA式原初实体，主体性极弱，不决策不规划
+- **语义-实在转换**: 系统Agent是实在界与想象界的交界点
 
-2. **运动模块**
-   - 符号-实在耦合
-   - 代码执行反馈
+### 🔄 实时文件同步
+- **自动状态持久化**: Agent激活时自动同步状态到YAML文件
+- **消息缓存持久化**: `bg_message_cache`和`input_message_cache`完整保存
+- **调试模式**: 可禁用自动同步，便于调试
 
-3. **三注册接口**
-   - 象征界（基因库）
-   - 想象界（上下文）
-   - 实在界（物理反馈）
+### 🏗️ 模块化系统Agent
+- **独立文件结构**: 每个系统Agent在独立文件中实现
+- **动态类型创建**: 使用`eval(class_name)`根据YAML配置动态创建实例
+- **抽象接口**: InputAgent/OutputAgent抽象基类
 
-4. **演化机制**
-   - 淘汰与变异
-   - 信用分配
+### 📡 异步消息系统
+- **异步消息总线**: 管理Agent间的消息传递
+- **消息队列**: 异步处理消息，避免阻塞
+- **连接管理**: 输入/输出连接映射
 
 ## 快速开始
 
-项目正在积极开发中，从Agent激活机制开始构建。
+### 环境配置
+1. 创建`.env`文件：
+```bash
+OPENAI_API_KEY=your_api_key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-3.5-turbo
+```
 
-## 核心理念
+### 运行系统
+```bash
+python main.py
+```
 
-- 所有知识都是纯字符串，无结构化数据
-- 智能通过符号与实在的耦合涌现
-- 系统不预设意图，只记录"什么组合导致了什么结果"
-- 智能是淘汰的残余，而非设计的结果
+### 调试模式
+编辑`main.py`中的`DEBUG_MODE = True`可禁用自动文件同步。
+
+## 系统Agent
+
+### 已实现
+- **AgentCreatorOutputAgent**: 创建普通Agent的系统输出Agent
+- **SystemMonitorInputAgent**: 系统监控输入Agent，定期报告系统状态
+
+### 计划中（见TODO.md）
+- **用户输入Agent**: 提供用户与系统的交互接口
+- **系统Agent探查Agent**: 查询系统内可用的系统Agent及其使用方法
+
+## 开发理念
+
+### 第一性原理
+- **表达能力等价性**: 新Agent表达能力 ≥ 原Agent表达能力
+- **语义体系与编程体系分离**: YAML配置描述语义，Python类实现逻辑
+- **文件同步机制**: 所有Agent类必须实现`sync_to_file`和`sync_from_file`方法
+
+### 工程实践
+- **类型注解**: 所有方法参数和返回值使用类型注解
+- **异步编程**: 统一使用`async/await`处理异步操作
+- **模块化设计**: driver/包含核心组件，system_interface_agents/包含具体实现
+
+## 核心洞察
+
+- **伪代码理解**: 伪代码是示意，不能运行，需要实现为可执行代码
+- **简单性原则**: 避免过度设计，直接实现需求
+- **动态类型使用**: Python的`eval()`可以简化动态对象创建
+- **不要硬编码**: 使用配置驱动而非硬编码逻辑
+
+## 贡献指南
+
+1. 遵循现有的代码风格和项目结构
+2. 所有Agent类必须实现文件同步方法
+3. 系统Agent需要独立的YAML配置文件
+4. 使用异步编程模式
+
+## 许可证
+
+MIT License

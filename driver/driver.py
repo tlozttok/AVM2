@@ -7,6 +7,7 @@ import asyncio
 import os
 import json
 import yaml
+from pathlib import Path
 
 
 type Keyword = str
@@ -168,6 +169,9 @@ class Agent:
             self.default_input_check_function
         self.message_bus = message_bus
         self.is_activating = False  # 防止重复激活
+        self._env_config = None  # 缓存.env配置
+        self._file_path = None  # 缓存文件路径
+        self.auto_sync_enabled = True  # 默认启用自动同步
     def default_input_check_function(self,keywords:List[Tuple[Keyword,Keyword]])->bool:
         received_keywords = [k[1] for k in keywords]
         return all([k in received_keywords for k in self.input_message_keyword])
@@ -178,7 +182,7 @@ class Agent:
         使用人类可编辑的格式（YAML或JSON）
         """
         if file_path is None:
-            file_path = f"{self.id}.{format}"
+            file_path = self._get_agent_file_path()
         
         # 构建Agent数据
         agent_data = {
@@ -187,6 +191,22 @@ class Agent:
             "input_connections": self.input_connections.connections,
             "output_connections": self.output_connections.connections,
             "input_message_keyword": self.input_message_keyword,
+            "bg_message_cache": [
+                {
+                    "sender_keyword": msg.sender_keyword,
+                    "content": msg.content,
+                    "receiver_keyword": msg.receiver_keyword
+                }
+                for msg in self.bg_message_cache
+            ],
+            "input_message_cache": [
+                {
+                    "sender_keyword": msg.sender_keyword,
+                    "content": msg.content,
+                    "receiver_keyword": msg.receiver_keyword
+                }
+                for msg in self.input_message_cache
+            ],
             "metadata": {
                 "type": "Agent",
                 "version": "1.0"
@@ -207,6 +227,37 @@ class Agent:
             
         except Exception as e:
             print(f"❌ 保存Agent '{self.id}' 到文件失败: {e}")
+    
+    def _get_agent_file_path(self) -> str:
+        """
+        计算Agent的存储文件路径
+        根据当前项目结构：
+        - 普通Agent: Agents/{id}.yaml
+        - 系统Agent: Agents/SystemAgents/{id}.yaml
+        """
+        if self._file_path:
+            return self._file_path
+            
+        # 检查是否是系统Agent
+        project_root = Path(__file__).parent.parent
+        system_agents_dir = project_root / "Agents" / "SystemAgents"
+        
+        # 检查SystemAgents目录中是否有该Agent的文件
+        system_agent_file = system_agents_dir / f"{self.id}.yaml"
+        if system_agent_file.exists():
+            self._file_path = str(system_agent_file)
+            return self._file_path
+        
+        # 检查普通Agent目录
+        agents_dir = project_root / "Agents"
+        agent_file = agents_dir / f"{self.id}.yaml"
+        if agent_file.exists():
+            self._file_path = str(agent_file)
+            return self._file_path
+        
+        # 如果都不存在，默认使用普通Agent路径
+        self._file_path = str(agents_dir / f"{self.id}.yaml")
+        return self._file_path
     
     def sync_from_file(self, file_path: str) -> None:
         """
@@ -256,10 +307,75 @@ class Agent:
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
+            # 更新消息缓存
+            bg_message_cache = agent_data.get("bg_message_cache", [])
+            if isinstance(bg_message_cache, list):
+                self.bg_message_cache = [
+                    AgentMessage(
+                        sender_keyword=msg.get("sender_keyword", ""),
+                        content=msg.get("content", ""),
+                        receiver_keyword=msg.get("receiver_keyword")
+                    )
+                    for msg in bg_message_cache
+                ]
+            
+            input_message_cache = agent_data.get("input_message_cache", [])
+            if isinstance(input_message_cache, list):
+                self.input_message_cache = [
+                    AgentMessage(
+                        sender_keyword=msg.get("sender_keyword", ""),
+                        content=msg.get("content", ""),
+                        receiver_keyword=msg.get("receiver_keyword")
+                    )
+                    for msg in input_message_cache
+                ]
+            
+            # 缓存文件路径
+            self._file_path = file_path
+            
             print(f"✅ Agent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
             print(f"❌ 从文件加载Agent失败: {e}")
+    
+    def _load_env_config(self) -> dict:
+        """从项目根目录的.env文件加载配置"""
+        if self._env_config is not None:
+            return self._env_config
+            
+        # 查找项目根目录的.env文件
+        project_root = Path(__file__).parent.parent
+        env_file = project_root / ".env"
+        
+        config = {}
+        
+        if env_file.exists():
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            config[key.strip()] = value.strip()
+                print(f"✅ 从文件加载环境配置: {env_file}")
+            except Exception as e:
+                print(f"❌ 读取.env文件失败: {e}")
+        else:
+            print(f"⚠️ 未找到.env文件: {env_file}")
+        
+        self._env_config = config
+        return config
+    
+    def _get_env_value(self, key: str, default: str = None) -> str:
+        """获取环境变量值，优先从.env文件读取，其次从系统环境变量读取"""
+        config = self._load_env_config()
+        
+        # 优先从.env文件读取
+        if key in config:
+            return config[key]
+        
+        # 其次从系统环境变量读取
+        return os.environ.get(key, default)
     
 
     
@@ -361,6 +477,15 @@ class Agent:
         """异步激活Agent，调用大模型API"""
         
         self.reduce()
+        
+        # 在激活前自动同步状态到文件（如果启用）
+        if self.auto_sync_enabled:
+            try:
+                self.sync_to_file()
+                print(f"📝 Agent '{self.id}' 状态已实时同步到文件")
+            except Exception as e:
+                print(f"⚠️ Agent '{self.id}' 文件同步失败: {e}")
+        
         # 构建上下文
         output_keywords = self.output_connections.get_keyword if hasattr(self.output_connections, 'get_keyword') else []
         context = Context().integrate(
@@ -378,14 +503,15 @@ class Agent:
             
         try:
             # 初始化异步OpenAI客户端
+            
             client = AsyncOpenAI(
-                api_key=os.environ.get("OPENAI_API_KEY"),
-                base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+                api_key=self._get_env_value("OPENAI_API_KEY"),
+                base_url=self._get_env_value("OPENAI_BASE_URL", "https://api.openai.com/v1")
             )
             
             # 异步调用大模型API
             response = await client.chat.completions.create(
-                model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
+                model=self._get_env_value("OPENAI_MODEL", "gpt-3.5-turbo"),
                 messages=messages,
                 max_tokens=1000,
                 temperature=0.7
