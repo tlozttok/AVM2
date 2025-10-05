@@ -162,7 +162,7 @@ class Agent:
         self.prompt = prompt
         self.input_connections = InputConnections()
         self.output_connections = OutputConnections()
-        self.bg_message_cache:  list[AgentMessage] = []
+        self.bg_message_cache:  list[Tuple[AgentMessage,bool]] = []
         self.input_message_cache: list[AgentMessage] = []
         self.input_message_keyword = []
         self.input_check_function:Callable[[List[Tuple[Keyword,Keyword]]],bool] = \
@@ -195,9 +195,10 @@ class Agent:
                 {
                     "sender_keyword": msg.sender_keyword,
                     "content": msg.content,
-                    "receiver_keyword": msg.receiver_keyword
+                    "receiver_keyword": msg.receiver_keyword,
+                    "is_unused": is_unused
                 }
-                for msg in self.bg_message_cache
+                for msg, is_unused in self.bg_message_cache
             ],
             "input_message_cache": [
                 {
@@ -311,10 +312,13 @@ class Agent:
             bg_message_cache = agent_data.get("bg_message_cache", [])
             if isinstance(bg_message_cache, list):
                 self.bg_message_cache = [
-                    AgentMessage(
-                        sender_keyword=msg.get("sender_keyword", ""),
-                        content=msg.get("content", ""),
-                        receiver_keyword=msg.get("receiver_keyword")
+                    (
+                        AgentMessage(
+                            sender_keyword=msg.get("sender_keyword", ""),
+                            content=msg.get("content", ""),
+                            receiver_keyword=msg.get("receiver_keyword")
+                        ),
+                        msg.get("is_unused", True)  # 默认为未使用
                     )
                     for msg in bg_message_cache
                 ]
@@ -392,7 +396,7 @@ class Agent:
         if input_channel in self.input_message_keyword:
             self.input_message_cache.append(message)
         else:
-            self.bg_message_cache.append(message)
+            self.bg_message_cache.append((message, True))  # 新消息标记为未使用
             
         # 检查是否应该激活
         if self.input_check_function([(msg.sender_keyword, msg.receiver_keyword) for msg in self.input_message_cache]):
@@ -468,10 +472,24 @@ class Agent:
             
     
     def reduce(self):
+        """
+        减少消息缓存：
+        - 对已使用的消息进行去重（基于发送者和接收者关键词）
+        - 保留未使用的消息
+        """
         deduplicated_messages = {}
-        for message in self.bg_message_cache:
-            deduplicated_messages[(message.sender_keyword,message.receiver_keyword)] = message
-        self.bg_message_cache = list(deduplicated_messages.values())
+        reserved_messages = []
+        
+        for message, is_unused in self.bg_message_cache:
+            if not is_unused:
+                # 已使用的消息：基于发送者和接收者关键词去重
+                deduplicated_messages[(message.sender_keyword, message.receiver_keyword)] = message
+            else:
+                # 未使用的消息：保留
+                reserved_messages.append((message, is_unused))
+                
+        # 合并去重后的已使用消息和保留的未使用消息
+        self.bg_message_cache = [(message, False) for message in deduplicated_messages.values()] + reserved_messages
     
     async def activate_async(self):
         """异步激活Agent，调用大模型API"""
@@ -488,15 +506,20 @@ class Agent:
         
         # 构建上下文
         output_keywords = self.output_connections.get_keyword if hasattr(self.output_connections, 'get_keyword') else []
+        bg_messages = [message for message, is_unused in self.bg_message_cache]
         context = Context().integrate(
             self.prompt, 
-            self.bg_message_cache, 
+            bg_messages, 
             self.input_message_cache,
             output_keywords
         )
         messages = context.to_messages()
         
-        self.input_message_cache=[]
+        # 标记所有背景消息为已使用
+        self.bg_message_cache = [(message, False) for message, is_unused in self.bg_message_cache]
+        
+        # 清空输入消息缓存
+        self.input_message_cache = []
         
         if not messages:
             return
