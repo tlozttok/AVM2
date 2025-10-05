@@ -513,7 +513,7 @@ class Agent:
             response = await client.chat.completions.create(
                 model=self._get_env_value("OPENAI_MODEL", "gpt-3.5-turbo"),
                 messages=messages,
-                max_tokens=1000,
+                max_tokens=2048,
                 temperature=0.7
             )
             
