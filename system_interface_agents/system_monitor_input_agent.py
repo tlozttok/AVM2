@@ -19,22 +19,24 @@ class SystemMonitorInputAgent(InputAgent):
     提供实在界→想象界的转换
     """
     
-    def __init__(self, id: str, report_interval: float = 10.0, message_bus=None):
+    def __init__(self, id: str, report_interval: float = 30.0, message_bus=None):
         super().__init__(id, message_bus)
         self.agent_system = async_system.SYMBOLIC_REAL
         self.report_interval = report_interval  # 报告间隔（秒）
         self.last_report_time = 0
+        self.first_activate = True
     
     async def collect_input(self) -> Optional[str]:
         """收集系统状态信息"""
         current_time = time.time()
         
         # 检查是否到达报告间隔
-        if current_time - self.last_report_time >= self.report_interval:
+        if self.first_activate or current_time - self.last_report_time >= self.report_interval and self.report_interval > 0:
             self.last_report_time = current_time
             
             # 收集系统信息
             system_info = self._collect_system_info()
+            self.first_activate  = False
             return system_info
         
         return None
