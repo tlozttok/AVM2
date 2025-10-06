@@ -9,6 +9,12 @@ import json
 import yaml
 from pathlib import Path
 
+# 日志系统导入
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.logger import logger
+
 
 type Keyword = str
 
@@ -44,12 +50,9 @@ class SystemMessage:
             self.content += "\n\n以下是其他Agent的实时信息：\n" + "\n".join([message.to_str() for message in agent_message])
 
 class Context:
-    content:Tuple[SystemMessage, UserMessage]
-    
-    def __init__(self, system_message:SystemMessage=None, user_message:UserMessage=None):
-        self.content = (system_message, user_message)
         
-    def integrate(self, system_prompt:str, bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None):
+    @classmethod
+    def integrate(system_prompt:str, bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None)-> List[Dict[str, str]] :
         """集成上下文信息"""
         system_msg = SystemMessage()
         
@@ -66,16 +69,12 @@ class Context:
         user_msg = UserMessage()
         user_msg.integrate(input_messages)
         
-        self.content = (system_msg, user_msg)
-        return self
-        
-    def to_messages(self) -> List[Dict[str, str]]:
-        """将上下文转换为OpenAI API格式的消息列表"""
+        #将上下文转换为OpenAI API格式的消息列表
         messages = []
-        if self.content[0] and self.content[0].content:
-            messages.append({"role": "system", "content": self.content[0].content})
-        if self.content[1] and self.content[1].content:
-            messages.append({"role": "user", "content": self.content[1].content})
+        if system_msg and system_msg.content:
+            messages.append({"role": "system", "content": system_msg.content})
+        if user_msg and user_msg.content:
+            messages.append({"role": "user", "content": user_msg.content})
         return messages
         
 
@@ -383,11 +382,6 @@ class Agent:
     
 
     
-    def receive_message(self, message: AgentMessage, sender_id:str) -> None:
-        """同步接收消息（用于向后兼容）"""
-        # 在异步环境中，应该使用receive_message_async
-        asyncio.create_task(self.receive_message_async(message, sender_id))
-    
     async def receive_message_async(self, message: AgentMessage, sender_id:str) -> None:
         """异步接收消息"""
         input_channel = self.input_connections.get(sender_id)
@@ -416,6 +410,20 @@ class Agent:
         # 解析原始内容，提取输出通道对应的消息
         channel_messages = self._parse_keyword_messages(raw_content)
         
+        # 记录激活后解析出的消息和发送去向（DEBUG模式）
+        parsed_messages_info = []
+        for output_channel, content in channel_messages.items():
+            receiver_ids = self.output_connections.get(output_channel)
+            if receiver_ids:
+                parsed_messages_info.append({
+                    "输出通道": output_channel,
+                    "消息内容": content,
+                    "接收者": receiver_ids
+                })
+        
+        # 更新激活记录，添加解析后的消息信息
+        logger.log_activation_details(self.id, f"原始响应: {raw_content}", parsed_messages_info, is_system_agent=False)
+        
         # 为每个输出通道消息创建AgentMessage并发送
         for output_channel, content in channel_messages.items():
             # 获取该输出通道对应的所有接收者ID
@@ -435,11 +443,6 @@ class Agent:
                         await self.message_bus.send_message(self.id, message, receiver_id)
                     else:
                         print(f"警告: Agent {self.id} 未连接到消息总线，无法发送消息")
-    
-    def send_message(self, raw_content: str):
-        """同步发送消息（用于向后兼容）"""
-        # 在异步环境中，应该使用send_message_async
-        asyncio.create_task(self.send_message_async(raw_content))
     
     def _parse_keyword_messages(self, raw_content: str) -> Dict[Keyword, str]:
         """
@@ -498,22 +501,17 @@ class Agent:
         
         # 在激活前自动同步状态到文件（如果启用）
         if self.auto_sync_enabled:
-            try:
                 self.sync_to_file()
-                print(f"📝 Agent '{self.id}' 状态已实时同步到文件")
-            except Exception as e:
-                print(f"⚠️ Agent '{self.id}' 文件同步失败: {e}")
         
         # 构建上下文
         output_keywords = self.output_connections.get_keyword if hasattr(self.output_connections, 'get_keyword') else []
         bg_messages = [message for message, is_unused in self.bg_message_cache]
-        context = Context().integrate(
+        messages = Context.integrate(
             self.prompt, 
             bg_messages, 
             self.input_message_cache,
             output_keywords
         )
-        messages = context.to_messages()
         
         # 标记所有背景消息为已使用
         self.bg_message_cache = [(message, False) for message, is_unused in self.bg_message_cache]
@@ -521,8 +519,6 @@ class Agent:
         # 清空输入消息缓存
         self.input_message_cache = []
         
-        if not messages:
-            return
             
         try:
             # 初始化异步OpenAI客户端
@@ -548,11 +544,6 @@ class Agent:
             
         except Exception as e:
             print(f"API调用失败: {e}")
-    
-    def activate(self):
-        """同步激活Agent（用于向后兼容）"""
-        # 在异步环境中，应该使用activate_async
-        asyncio.create_task(self.activate_async())
         
         
         

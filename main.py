@@ -13,6 +13,9 @@ from system_interface_agents.agent_creator_output_agent import AgentCreatorOutpu
 from system_interface_agents.system_monitor_input_agent import SystemMonitorInputAgent
 from driver import async_system
 
+# 日志系统导入
+from utils.logger import logger
+
 # 调试模式设置 - 修改这个变量来控制是否启用调试模式
 DEBUG_MODE = True  # 设置为True时禁用自动文件同步
 
@@ -61,17 +64,32 @@ async def main():
     await system.start()
     
     try:
+        # 设置日志系统
+        logger.set_debug_mode(DEBUG_MODE)
+        logger.info("AVM2 系统启动完成")
+        
         # 保持程序运行，等待消息
         print("📡 系统正在运行，等待消息...")
         print("按 Ctrl+C 停止系统")
+        
+        # 宏观信息记录循环
+        async def macro_log_loop():
+            while True:
+                logger.log_macro_system_info(system)
+                await asyncio.sleep(30)  # 每30秒记录一次宏观信息
+        
+        # 启动宏观信息记录任务
+        macro_task = asyncio.create_task(macro_log_loop())
         
         # 创建一个永久等待的future
         await asyncio.Future()
         
     except KeyboardInterrupt:
         print("\n🛑 收到停止信号，正在关闭系统...")
+        logger.info("AVM2 系统正在关闭")
     finally:
         await system.stop()
+        logger.info("AVM2 系统已关闭")
 
 
 if __name__ == "__main__":

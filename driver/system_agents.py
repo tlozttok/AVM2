@@ -13,6 +13,12 @@ import os
 from abc import ABC, abstractmethod
 from .driver import Agent, AgentMessage, MessageBus
 
+# 日志系统导入
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.logger import logger
+
 
 class InputAgent(Agent):
     """
@@ -77,6 +83,19 @@ class InputAgent(Agent):
                     # 格式化消息
                     message_content = self.format_message(input_data)
                     
+                    # 记录InputAgent激活详情（DEBUG模式）
+                    output_channels = list(self.output_connections.connections.keys())
+                    receiver_ids = []
+                    for channel in output_channels:
+                        receiver_ids.extend(self.output_connections.get(channel))
+                    
+                    logger.log_activation_details(
+                        self.id, 
+                        f"输入数据: {input_data}", 
+                        [{"输出通道": channel, "接收者": self.output_connections.get(channel)} for channel in output_channels],
+                        is_system_agent=True
+                    )
+                    
                     # 发送消息到所有输出连接
                     await self.send_message_async(message_content)
                     
@@ -84,7 +103,7 @@ class InputAgent(Agent):
                 await asyncio.sleep(0.1)
                 
             except Exception as e:
-                print(f"InputAgent {self.id} 输入循环错误: {e}")
+                logger.error(f"InputAgent {self.id} 输入循环错误: {e}")
                 await asyncio.sleep(1)  # 错误后等待更长时间
     
     async def start_input(self):
@@ -234,13 +253,21 @@ class OutputAgent(Agent):
         if input_channel:
             message.receiver_keyword = input_channel
         
+        # 记录OutputAgent激活详情（DEBUG模式）
+        logger.log_activation_details(
+            self.id, 
+            f"收到消息: {message.content} (来自: {sender_id})", 
+            [{"动作类型": "执行实际行动", "发送者": sender_id}],
+            is_system_agent=True
+        )
+        
         # 执行实际行动
         success = await self.execute_action(message)
         
         if success:
-            print(f"OutputAgent {self.id} 成功执行动作: {message.content}")
+            logger.info(f"OutputAgent {self.id} 成功执行动作: {message.content}")
         else:
-            print(f"OutputAgent {self.id} 执行动作失败: {message.content}")
+            logger.warning(f"OutputAgent {self.id} 执行动作失败: {message.content}")
     
     # 重写LLM相关方法为空实现
     def activate(self):
