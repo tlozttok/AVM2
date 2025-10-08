@@ -9,6 +9,7 @@ import yaml
 import os
 from typing import Dict, List, Set, Any
 from .driver import Agent, MessageBus
+from .system_agents import InputAgent, OutputAgent, IOAgent
 
 SYMBOLIC_REAL = None
 
@@ -18,6 +19,7 @@ class AgentSystem:
     def __init__(self):
         self.message_bus = MessageBus()
         self.agents: Dict[str, Agent] = {}
+        
         self.start_time = time.time()
         self.message_count = 0
         self.activation_count = 0
@@ -31,22 +33,19 @@ class AgentSystem:
     async def start(self):
         """启动整个系统"""
         await self.message_bus.start()
-        print(f"Agent系统已启动，包含 {len(self.agents)} 个Agent")
         
         # 筛选InputAgent启动它们的输入循环
         input_agents = []
         for agent in self.agents.values():
             # 检查是否是InputAgent类型（通过检查是否有start_input方法）
-            if hasattr(agent, 'start_input') and callable(agent.start_input):
+            if isinstance(agent,InputAgent):
                 input_agents.append(agent)
         
         # 启动所有InputAgent的输入循环
         for input_agent in input_agents:
-            try:
-                await input_agent.start_input()
-                print(f"✅ 启动InputAgent: {input_agent.id}")
-            except Exception as e:
-                print(f"❌ 启动InputAgent {input_agent.id} 失败: {e}")
+            await input_agent.start_input()
+            
+        print("Agent系统已启动")
         
     
     async def stop(self):
@@ -54,8 +53,7 @@ class AgentSystem:
         await self.message_bus.stop()
         print("Agent系统已停止")
     
-    
-    # ===== 分层状态查询方法 =====
+    #TODO: 我需要更深思熟虑的考虑状态信息的数据结构
     
     def get_system_metadata(self) -> Dict[str, Any]:
         """获取系统元信息（轻量级）"""
@@ -81,11 +79,11 @@ class AgentSystem:
         for agent in self.agents.values():
             # 输入关键词
             if hasattr(agent, 'input_connections') and agent.input_connections:
-                for keyword in agent.input_connections.get_keyword:
+                for keyword in agent.input_connections.get_keywords:
                     keywords.add(keyword)
             # 输出关键词
             if hasattr(agent, 'output_connections') and agent.output_connections:
-                for keyword in agent.output_connections.get_keyword:
+                for keyword in agent.output_connections.get_keywords:
                     keywords.add(keyword)
             # 激活关键词
             if hasattr(agent, 'input_message_keyword'):
@@ -193,12 +191,12 @@ class AgentSystem:
             # 输入连接信息
             if hasattr(agent, 'input_connections') and agent.input_connections:
                 agent_info["input_connections"] = agent.input_connections.connections
-                agent_info["input_keywords"] = agent.input_connections.get_keyword
+                agent_info["input_keywords"] = agent.input_connections.get_keywords
             
             # 输出连接信息
             if hasattr(agent, 'output_connections') and agent.output_connections:
                 agent_info["output_connections"] = agent.output_connections.connections
-                agent_info["output_keywords"] = agent.output_connections.get_keyword
+                agent_info["output_keywords"] = agent.output_connections.get_keywords
             
             # 激活关键词
             if hasattr(agent, 'input_message_keyword'):

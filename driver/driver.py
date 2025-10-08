@@ -27,7 +27,6 @@ class UserMessage:
     def integrate(self, agent_message:List['AgentMessage']):
         self.content += "\n".join([message.to_str() for message in agent_message])
         
-
 class SystemMessage:
     content:str
     
@@ -50,7 +49,38 @@ class SystemMessage:
             self.content += "\n\n以下是其他Agent的实时信息：\n" + "\n".join([message.to_str() for message in agent_message])
 
 class Context:
+    
+    class UserMessage:
+        content:str
         
+        def __init__(self):
+            self.content = ""
+        
+        def integrate(self, agent_message:List['AgentMessage']):
+            self.content += "\n".join([message.to_str() for message in agent_message])
+        
+    class SystemMessage:
+        content:str
+        
+        def __init__(self):
+            self.content = "你是一个Agent系统中的Agent，基本行为是接受其他Agent的信息，根据后面的提示，进行信息处理，输出一个信息。其他Agent的信息会以'{发送端关键词} - {接收端关键词}:{内容}'的格式输入。你的输出会被处理并发送到和你连接的其他Agent，其他Agent也和你一样，不过连接不同。每个连接有两个关键词，发送端的关键词（输出关键词）和接收端的关键词（输入关键词）。你的输出格式应该是“<think>思考过程</think><keyword1>关键词一的输出</keyword1><keyword2>关键词二的输出</keyword>...”。以下是你的输出关键词列表：\n"
+            
+        def integrate_keywords(self, keywords:List[Keyword]):
+            """集成输出关键词列表"""
+            if keywords:
+                self.content += "\n".join([f"- {keyword}" for keyword in keywords]) + "\n"
+        
+        def integrate_system_prompt(self, system_prompt:str):
+            """集成系统提示词"""
+            if system_prompt:
+                self.content += f"\n\n以下是你的具体任务和背景信息：\n{system_prompt}"
+        
+        def integrate(self, agent_message:List['AgentMessage']):
+            """集成其他Agent的实时信息"""
+            if agent_message:
+                self.content += "\n\n以下是其他Agent的实时信息：\n" + "\n".join([message.to_str() for message in agent_message])
+
+    
     @classmethod
     def integrate(system_prompt:str, bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None)-> List[Dict[str, str]] :
         """集成上下文信息"""
@@ -89,17 +119,20 @@ class InputConnections:
     def __init__(self):
         self.connections = {}
     
-    def get(self, sender_id:str)->Keyword:
+    def get_keyword(self, sender_id:str)->Keyword:
         """通过发送者ID获取对应的输入通道"""
         return self.connections.get(sender_id)
     
+    def set_keyword(self, sender_id:str, input_channel:Keyword):
+        self.connections[sender_id] = input_channel
+    
     @property
-    def get_id(self)->List[str]:
+    def id_list(self)->List[str]:
         """获取所有连接的发送者ID列表"""
         return list(self.connections.keys())
     
     @property
-    def get_keyword(self)->List[Keyword]:
+    def keywords(self)->List[Keyword]:
         """获取所有输入通道列表"""
         return list(self.connections.values())
     
@@ -113,17 +146,20 @@ class OutputConnections:
     def __init__(self):
         self.connections = {}
     
-    def get(self, output_channel:Keyword)->List[str]:
+    def get_id_list(self, output_channel:Keyword)->List[str]:
         """通过输出通道获取对应的接收者ID列表"""
         return self.connections.get(output_channel, [])
     
+    def set_id_list(self, output_channel:Keyword, id_list:List[str]):
+        self.connections[output_channel]=id_list
+    
     @property
-    def get_keyword(self)->List[Keyword]:
+    def keywords(self)->List[Keyword]:
         """获取所有输出通道列表"""
         return list(self.connections.keys())
     
     @property
-    def get_id(self)->List[List[str]]:
+    def id_list(self)->List[List[str]]:
         """获取所有接收者ID列表的列表"""
         return list(self.connections.values())
 
@@ -167,15 +203,15 @@ class Agent:
         self.input_check_function:Callable[[List[Tuple[Keyword,Keyword]]],bool] = \
             self.default_input_check_function
         self.message_bus = message_bus
-        self.is_activating = False  # 防止重复激活
         self._env_config = None  # 缓存.env配置
         self._file_path = None  # 缓存文件路径
         self.auto_sync_enabled = True  # 默认启用自动同步
+        
     def default_input_check_function(self,keywords:List[Tuple[Keyword,Keyword]])->bool:
         received_keywords = [k[1] for k in keywords]
         return all([k in received_keywords for k in self.input_message_keyword])
     
-    def sync_to_file(self, file_path: str = None, format: str = "yaml") -> None:
+    def sync_to_file(self, file_path: str = None) -> None:
         """
         将Agent状态同步到文件
         使用人类可编辑的格式（YAML或JSON）
@@ -214,19 +250,14 @@ class Agent:
         }
         
         try:
-            if format.lower() == "yaml":
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
-            elif format.lower() == "json":
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(agent_data, f, ensure_ascii=False, indent=2)
-            else:
-                raise ValueError(f"不支持的格式: {format}")
-            
-            print(f"✅ Agent '{self.id}' 已保存到文件: {file_path}")
+            with open(file_path, 'w', encoding='utf-8') as f:
+                yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
+            #print(f"✅ Agent '{self.id}' 已保存到文件: {file_path}")
+                
             
         except Exception as e:
-            print(f"❌ 保存Agent '{self.id}' 到文件失败: {e}")
+            #print(f"❌ 保存Agent '{self.id}' 到文件失败: {e}")
+            pass
     
     def _get_agent_file_path(self) -> str:
         """
@@ -294,41 +325,41 @@ class Agent:
             self.prompt = agent_data.get("prompt", self.prompt)
             
             # 更新连接
-            input_connections = agent_data.get("input_connections", {})
+            input_connections = agent_data.get("input_connections", None)
             if isinstance(input_connections, dict):
                 self.input_connections.connections = input_connections
             
-            output_connections = agent_data.get("output_connections", {})
+            output_connections = agent_data.get("output_connections", None)
             if isinstance(output_connections, dict):
                 self.output_connections.connections = output_connections
             
             # 更新激活关键词
-            input_message_keyword = agent_data.get("input_message_keyword", [])
+            input_message_keyword = agent_data.get("input_message_keyword", None)
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
             # 更新消息缓存
-            bg_message_cache = agent_data.get("bg_message_cache", [])
+            bg_message_cache = agent_data.get("bg_message_cache", None)
             if isinstance(bg_message_cache, list):
                 self.bg_message_cache = [
                     (
                         AgentMessage(
-                            sender_keyword=msg.get("sender_keyword", ""),
-                            content=msg.get("content", ""),
-                            receiver_keyword=msg.get("receiver_keyword")
+                            sender_keyword=msg.get("sender_keyword", "unknow"),
+                            content=msg.get("content", "unknow"),
+                            receiver_keyword=msg.get("receiver_keyword", "unknow")
                         ),
                         msg.get("is_unused", True)  # 默认为未使用
                     )
                     for msg in bg_message_cache
                 ]
             
-            input_message_cache = agent_data.get("input_message_cache", [])
+            input_message_cache = agent_data.get("input_message_cache", None)
             if isinstance(input_message_cache, list):
                 self.input_message_cache = [
                     AgentMessage(
-                        sender_keyword=msg.get("sender_keyword", ""),
-                        content=msg.get("content", ""),
-                        receiver_keyword=msg.get("receiver_keyword")
+                        sender_keyword=msg.get("sender_keyword", "unknow"),
+                        content=msg.get("content", "unknow"),
+                        receiver_keyword=msg.get("receiver_keyword", "unknow")
                     )
                     for msg in input_message_cache
                 ]
@@ -382,9 +413,9 @@ class Agent:
     
 
     
-    async def receive_message_async(self, message: AgentMessage, sender_id:str) -> None:
+    async def receive_message(self, message: AgentMessage, sender_id:str) -> None:
         """异步接收消息"""
-        input_channel = self.input_connections.get(sender_id)
+        input_channel = self.input_connections.get_keyword(sender_id)
         if input_channel:
             message.receiver_keyword = input_channel
         if input_channel in self.input_message_keyword:
@@ -394,13 +425,10 @@ class Agent:
             
         # 检查是否应该激活
         if self.input_check_function([(msg.sender_keyword, msg.receiver_keyword) for msg in self.input_message_cache]):
-            if not self.is_activating:
-                self.is_activating = True
-                await self.activate_async()
-                self.is_activating = False
+            await self._activate()
         
             
-    async def send_message_async(self, raw_content: str):
+    async def send_message(self, raw_content: str):
         """
         异步发送消息：
         1. 从原始内容中提取不同输出通道对应的消息
@@ -410,24 +438,10 @@ class Agent:
         # 解析原始内容，提取输出通道对应的消息
         channel_messages = self._parse_keyword_messages(raw_content)
         
-        # 记录激活后解析出的消息和发送去向（DEBUG模式）
-        parsed_messages_info = []
-        for output_channel, content in channel_messages.items():
-            receiver_ids = self.output_connections.get(output_channel)
-            if receiver_ids:
-                parsed_messages_info.append({
-                    "输出通道": output_channel,
-                    "消息内容": content,
-                    "接收者": receiver_ids
-                })
-        
-        # 更新激活记录，添加解析后的消息信息
-        logger.log_activation_details(self.id, f"原始响应: {raw_content}", parsed_messages_info, is_system_agent=False)
-        
         # 为每个输出通道消息创建AgentMessage并发送
         for output_channel, content in channel_messages.items():
             # 获取该输出通道对应的所有接收者ID
-            receiver_ids = self.output_connections.get(output_channel)
+            receiver_ids = self.output_connections.get_id_list(output_channel)
             
             if receiver_ids:
                 for receiver_id in receiver_ids:
@@ -438,11 +452,7 @@ class Agent:
                         receiver_keyword=None  # 接收者会在receive_message中设置
                     )
                     
-                    # 通过MessageBus异步发送消息
-                    if self.message_bus:
-                        await self.message_bus.send_message(self.id, message, receiver_id)
-                    else:
-                        print(f"警告: Agent {self.id} 未连接到消息总线，无法发送消息")
+                    await self.message_bus.send_message(self.id, message, receiver_id)
     
     def _parse_keyword_messages(self, raw_content: str) -> Dict[Keyword, str]:
         """
@@ -468,7 +478,7 @@ class Agent:
         
         for keyword, content in matches:
             # 检查该关键词是否在output_connections中
-            if keyword in self.output_connections.get_keyword:
+            if keyword in self.output_connections.keywords:
                 keyword_messages[keyword] = content.strip()
         
         return keyword_messages
@@ -494,7 +504,7 @@ class Agent:
         # 合并去重后的已使用消息和保留的未使用消息
         self.bg_message_cache = [(message, False) for message in deduplicated_messages.values()] + reserved_messages
     
-    async def activate_async(self):
+    async def _activate(self):
         """异步激活Agent，调用大模型API"""
         
         self.reduce()
@@ -504,7 +514,7 @@ class Agent:
                 self.sync_to_file()
         
         # 构建上下文
-        output_keywords = self.output_connections.get_keyword if hasattr(self.output_connections, 'get_keyword') else []
+        output_keywords = self.output_connections.keywords if hasattr(self.output_connections, 'get_keyword') else []
         bg_messages = [message for message, is_unused in self.bg_message_cache]
         messages = Context.integrate(
             self.prompt, 
@@ -540,7 +550,7 @@ class Agent:
             content = response.choices[0].message.content
             
             # 异步发送响应消息
-            await self.send_message_async(content)
+            await self.send_message(content)
             
         except Exception as e:
             print(f"API调用失败: {e}")
@@ -577,15 +587,15 @@ class MessageBus:
                 receiver = self.agents.get(receiver_id)
                 if receiver:
                     # 异步处理消息接收
-                    await receiver.receive_message_async(message, sender_id)
+                    await receiver.receive_message(message, sender_id)
                 else:
-                    print(f"警告: 未找到接收者Agent: {receiver_id}")
+                    #未来需要处理这种情况
+                    pass
             except asyncio.CancelledError:
                 # 任务被取消，正常退出
                 print("🔌 消息总线处理循环被取消")
+                self.is_running = False
                 break        
-            except Exception as e:
-                print(f"处理消息时出错: {e}")
     
     async def start(self):
         """启动消息总线"""
