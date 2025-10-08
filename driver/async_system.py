@@ -8,12 +8,14 @@ import json
 import yaml
 import os
 from typing import Dict, List, Set, Any
+
+from utils.logger import Loggable
 from .driver import Agent, MessageBus
 from .system_agents import InputAgent, OutputAgent, IOAgent
 
 SYMBOLIC_REAL = None
 
-class AgentSystem:
+class AgentSystem(Loggable):
     """异步Agent系统管理器"""
     
     def __init__(self):
