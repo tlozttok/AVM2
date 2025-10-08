@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.logger import logger
+from utils.logger import Loggable
 
 
 type Keyword = str
@@ -182,7 +182,7 @@ class AgentMessage:
     def to_str(self)->str:
         return f"{self.sender_keyword} - {self.receiver_keyword}: {self.content}"
 
-class Agent:
+class Agent(Loggable):
     """
     微Agent实体
     - input_connections: 输入连接映射（发送者ID -> 输入通道）
@@ -560,7 +560,7 @@ class Agent:
         
         
         
-class MessageBus:
+class MessageBus(Loggable):
     """异步消息总线，管理Agent间的消息传递"""
     
     def __init__(self):
