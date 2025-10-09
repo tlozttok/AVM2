@@ -49,6 +49,10 @@ class LoggerFactory:
             logger.propagate = False  # 避免日志传播到 root logger
         
         cls._loggers[class_name] = logger
+        
+        logger.info("===============================")
+        logger.info(f"{class_name} 日志初始化。")
+        
         return logger
 
 # 基础类，提供日志功能
@@ -59,5 +63,6 @@ class Loggable:
         # 获取类名（支持继承）
         class_name = self.__class__.__name__
         self.logger = LoggerFactory.get_logger(class_name)
+        
         
 basic_logger = LoggerFactory.get_logger("basic")
