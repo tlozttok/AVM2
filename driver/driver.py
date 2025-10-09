@@ -650,30 +650,33 @@ class MessageBus(Loggable):
         self.processing_task = None
     
     def register_agent(self, agent: 'Agent'):
+        self.logger.info(f"注册Agent: {agent.id}")
         """注册Agent到消息总线"""
         self.agents[agent.id] = agent
     
     async def send_message(self, sender_id: str, message: AgentMessage, receiver_id: str):
         """异步发送消息到目标Agent"""
+        self.logger.info(f"{sender_id} 发送消息给 {receiver_id}")
         await self.message_queue.put((sender_id, message, receiver_id))
     
     async def process_messages(self):
         """异步处理消息队列"""
         self.is_running = True
+        self.logger.info("开始处理消息队列")
         while self.is_running:
             try:
                 sender_id, message, receiver_id = await self.message_queue.get()
-                
+                self.logger.debug(f"处理消息: {message}，从{sender_id}发送到{receiver_id}")
                 receiver = self.agents.get(receiver_id)
                 if receiver:
                     # 异步处理消息接收
                     await receiver.receive_message(message, sender_id)
                 else:
-                    #未来需要处理这种情况
-                    pass
+                    self.logger.warning(f"未找到接收者: {receiver_id}")
             except asyncio.CancelledError:
                 # 任务被取消，正常退出
                 print("🔌 消息总线处理循环被取消")
+                self.logger.info("消息总线处理循环被取消")
                 self.is_running = False
                 break        
     
@@ -681,6 +684,7 @@ class MessageBus(Loggable):
         """启动消息总线"""
         self.processing_task = asyncio.create_task(self.process_messages())
         print("消息总线已启动")
+        self.logger.info("消息总线已启动")
     
     async def stop(self):
         """停止消息总线"""
@@ -692,6 +696,7 @@ class MessageBus(Loggable):
             except asyncio.CancelledError:
                 pass
         print("🔌 消息总线已停止")
+        self.logger.info("消息总线已停止")
         
     
     

@@ -29,10 +29,11 @@ class InputAgent(Agent):
         super().__init__(id, "", message_bus)
         self.is_running = False
         self.input_task = None
+        self.logger.info(f"InputAgent {self.id} 初始化完成")
     
     async def receive_message(self, message: AgentMessage, sender_id: str) -> None:
         """异步版本 - 同样忽略消息"""
-        print(f"InputAgent {self.id} 收到消息: {message.content}！发送者{sender_id}，发送关键词{message.sender_keyword}，不应该如此。")
+        self.logger.warning(f"InputAgent {self.id} 收到消息: {message.content}！发送者{sender_id}，发送关键词{message.sender_keyword}，不应该如此。")
     
     @abstractmethod
     async def collect_input(self) -> Optional[str]:
@@ -64,14 +65,17 @@ class InputAgent(Agent):
     async def input_loop(self):
         """输入循环 - 持续收集和处理输入"""
         self.is_running = True
+        self.logger.info("启动输入循环")
         while self.is_running:
             # 收集输入
             input_data = await self.collect_input()
+            self.logger.debug(f"收到输入: {input_data}")
                 
             if input_data and self.should_activate(input_data):
                 # 格式化消息
                 message_content = self.format_message(input_data)
-                    
+                
+                self.logger.debug(f"发送消息: {message_content}")    
                 # 发送消息到所有输出连接
                 await self.send_message(message_content)
                     
@@ -82,7 +86,7 @@ class InputAgent(Agent):
     async def start_input(self):
         """启动输入收集"""
         self.input_task = asyncio.create_task(self.input_loop())
-        print(f"InputAgent {self.id} 已启动")
+        self.logger.info(f"InputAgent {self.id} 已启动")
     
     async def stop_input(self):
         """停止输入收集"""
@@ -93,7 +97,7 @@ class InputAgent(Agent):
                 await self.input_task
             except asyncio.CancelledError:
                 pass
-        print(f"InputAgent {self.id} 已停止")
+        self.logger.info(f"InputAgent {self.id} 已停止")
     
     # 重写LLM相关方法为空实现
     
@@ -106,6 +110,7 @@ class InputAgent(Agent):
         系统输入Agent的持久化
         包含输入Agent特有的属性
         """
+        self.logger.info(f"正在将InputAgent '{self.id}' 保存到文件: {file_path}")
         if file_path is None:
             file_path = f"{self.id}.{format}"
         
@@ -124,10 +129,10 @@ class InputAgent(Agent):
             with open(file_path, 'w', encoding='utf-8') as f:
                 yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
             
-            #print(f"✅ InputAgent '{self.id}' 已保存到文件: {file_path}")
+            self.logger.info(f"InputAgent '{self.id}' 已保存到文件: {file_path}")
             
         except Exception as e:
-            #print(f"❌ 保存InputAgent '{self.id}' 到文件失败: {e}")
+            self.logger.warning(f"保存InputAgent '{self.id}' 到文件失败: {e}")
             pass
             
     def sync_from_file(self, file_path: str = None, format: str = "yaml") -> None:
@@ -139,7 +144,7 @@ class InputAgent(Agent):
             file_path = f"{self.id}.{format}"
         
         if not os.path.exists(file_path):
-            print(f"❌ 文件不存在: {file_path}")
+            self.logger.error(f"文件不存在: {file_path}。忘记创建该InputAgent的文件了吗？")
             return
         
         try:
@@ -161,6 +166,7 @@ class InputAgent(Agent):
             
             # 验证数据格式
             if not isinstance(agent_data, dict) or "id" not in agent_data:
+                self.logger.error(f"无效的InputAgent数据格式: {file_path}")
                 raise ValueError("无效的InputAgent数据格式")
             
             # 更新InputAgent状态
@@ -180,10 +186,13 @@ class InputAgent(Agent):
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
-            print(f"✅ InputAgent '{self.id}' 已从文件加载: {file_path}")
+            self.logger.info(f"InputAgent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
-            print(f"❌ 从文件加载InputAgent失败: {e}")
+            if file_path or self.id!="":
+                self.logger.warning(f"InputAgent {self.id} 从文件加载Agent失败: {e}")
+            else:
+                self.logger.error(f"InputAgent无法从文件中初始化！")
 
 
 class OutputAgent(Agent):
@@ -197,6 +206,7 @@ class OutputAgent(Agent):
     def __init__(self, id: str, message_bus: MessageBus = None):
         # 不设置prompt，因为不使用LLM
         super().__init__(id, "", message_bus)
+        self.logger.info(f"OutputAgent {self.id} 初始化完成")
     
     @abstractmethod
     async def execute_action(self, message: AgentMessage) -> bool:
@@ -210,12 +220,20 @@ class OutputAgent(Agent):
     
     async def receive_message(self, message: AgentMessage, sender_id: str) -> None:
         """异步接收消息并执行实际行动"""
+        self.logger.info(f"{self.id} 接收到来自{sender_id} 的消息")
         input_channel = self.input_connections.get_keyword(sender_id)
         if input_channel:
             message.receiver_keyword = input_channel
+            self.logger.debug(f"设置接收者关键词: {input_channel}")
 
         # 执行实际行动
+        self.logger.debug(f"开始执行行动，消息内容: {message.content}")
         success = await self.execute_action(message)
+        
+        if success:
+            self.logger.info(f"OutputAgent {self.id} 成功执行行动")
+        else:
+            self.logger.warning(f"OutputAgent {self.id} 执行行动失败")
 
     
     async def _activate(self):
@@ -232,6 +250,7 @@ class OutputAgent(Agent):
         系统输出Agent的持久化
         包含输出Agent特有的属性
         """
+        self.logger.info(f"正在将OutputAgent '{self.id}' 保存到文件: {file_path}")
         if file_path is None:
             file_path = f"{self.id}.{format}"
         
@@ -250,10 +269,10 @@ class OutputAgent(Agent):
             with open(file_path, 'w', encoding='utf-8') as f:
                 yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
             
-            print(f"✅ OutputAgent '{self.id}' 已保存到文件: {file_path}")
+            self.logger.info(f"OutputAgent '{self.id}' 已保存到文件: {file_path}")
             
         except Exception as e:
-            print(f"❌ 保存OutputAgent '{self.id}' 到文件失败: {e}")
+            self.logger.warning(f"保存OutputAgent '{self.id}' 到文件失败: {e}")
     
     def sync_from_file(self, file_path: str = None, format: str = "yaml") -> None:
         """
@@ -264,7 +283,7 @@ class OutputAgent(Agent):
             file_path = f"{self.id}.{format}"
         
         if not os.path.exists(file_path):
-            print(f"❌ 文件不存在: {file_path}")
+            self.logger.error(f"文件不存在: {file_path}。忘记创建该OutputAgent的文件了吗？")
             return
         
         try:
@@ -286,6 +305,7 @@ class OutputAgent(Agent):
             
             # 验证数据格式
             if not isinstance(agent_data, dict) or "id" not in agent_data:
+                self.logger.error(f"无效的OutputAgent数据格式: {file_path}")
                 raise ValueError("无效的OutputAgent数据格式")
             
             # 更新OutputAgent状态
@@ -305,10 +325,13 @@ class OutputAgent(Agent):
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
-            print(f"✅ OutputAgent '{self.id}' 已从文件加载: {file_path}")
+            self.logger.info(f"OutputAgent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
-            print(f"❌ 从文件加载OutputAgent失败: {e}")
+            if file_path or self.id!="":
+                self.logger.warning(f"OutputAgent {self.id} 从文件加载Agent失败: {e}")
+            else:
+                self.logger.error(f"OutputAgent无法从文件中初始化！")
         
         
 class IOAgent(Agent):
@@ -322,6 +345,7 @@ class IOAgent(Agent):
         super().__init__(id, prompt, message_bus)
         self.agent_system = agent_system
         self.query_handlers = {}
+        self.logger.info(f"IOAgent {self.id} 初始化完成")
     
     @abstractmethod
     def _process_query(self, query_content: AgentMessage) -> str:
@@ -333,16 +357,22 @@ class IOAgent(Agent):
     
     async def receive_message(self, message: AgentMessage, sender_id: str) -> None:
         """异步接收消息并处理查询"""
+        self.logger.info(f"{self.id} 接收到来自{sender_id} 的消息")
         input_channel = self.input_connections.get_keyword(sender_id)
         if input_channel:
             message.receiver_keyword = input_channel
+            self.logger.debug(f"设置接收者关键词: {input_channel}")
         
         # 处理查询并生成响应
+        self.logger.debug(f"开始处理查询，消息内容: {message.content}")
         response = await self._process_query(message)
         
         # 发送响应
         if response:
+            self.logger.debug(f"发送响应: {response}")
             await self.send_message(response)
+        else:
+            self.logger.warning(f"IOAgent {self.id} 处理查询后未生成响应")
     
     # 重写激活方法，使用查询处理逻辑
     async def _activate(self):
@@ -353,6 +383,7 @@ class IOAgent(Agent):
         IOAgent的持久化
         包含IOAgent特有的属性
         """
+        self.logger.info(f"正在将IOAgent '{self.id}' 保存到文件: {file_path}")
         if file_path is None:
             file_path = f"{self.id}.{format}"
         
@@ -378,10 +409,10 @@ class IOAgent(Agent):
             else:
                 raise ValueError(f"不支持的格式: {format}")
             
-            print(f"✅ IOAgent '{self.id}' 已保存到文件: {file_path}")
+            self.logger.info(f"IOAgent '{self.id}' 已保存到文件: {file_path}")
             
         except Exception as e:
-            print(f"❌ 保存IOAgent '{self.id}' 到文件失败: {e}")
+            self.logger.warning(f"保存IOAgent '{self.id}' 到文件失败: {e}")
     
     def sync_from_file(self, file_path: str = None, format: str = "yaml") -> None:
         """
@@ -392,7 +423,7 @@ class IOAgent(Agent):
             file_path = f"{self.id}.{format}"
         
         if not os.path.exists(file_path):
-            print(f"❌ 文件不存在: {file_path}")
+            self.logger.error(f"文件不存在: {file_path}。忘记创建该IOAgent的文件了吗？")
             return
         
         try:
@@ -414,6 +445,7 @@ class IOAgent(Agent):
             
             # 验证数据格式
             if not isinstance(agent_data, dict) or "id" not in agent_data:
+                self.logger.error(f"无效的IOAgent数据格式: {file_path}")
                 raise ValueError("无效的IOAgent数据格式")
             
             # 更新IOAgent状态
@@ -434,7 +466,10 @@ class IOAgent(Agent):
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
-            print(f"✅ IOAgent '{self.id}' 已从文件加载: {file_path}")
+            self.logger.info(f"IOAgent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
-            print(f"❌ 从文件加载IOAgent失败: {e}")
+            if file_path or self.id!="":
+                self.logger.warning(f"IOAgent {self.id} 从文件加载Agent失败: {e}")
+            else:
+                self.logger.error(f"IOAgent无法从文件中初始化！")
