@@ -3,17 +3,18 @@
 """
 
 import asyncio
+from collections import defaultdict
 import time
 import json
 import yaml
 import os
-from typing import Dict, List, Optional, Set, Any
+from typing import Callable, Dict, List, Optional, Set, Any
 
 from utils.logger import Loggable
 from .driver import Agent, MessageBus
 from .system_agents import InputAgent, OutputAgent, IOAgent
 
-SYMBOLIC_REAL = None
+SYMBOLIC_REAL:'AgentSystem' = None
 
 class AgentSystem(Loggable):
     """异步Agent系统管理器"""
@@ -26,7 +27,25 @@ class AgentSystem(Loggable):
         self.message_count = 0
         self.activation_count = 0
         
+        self.event_registry = defaultdict(dict)
+        
         self.logger.info("Agent系统初始化完成")
+        
+    
+    #一个简单的事件系统
+    
+    def register_event(self, event_name: str, callback: Callable, id: str):
+        self.logger.debug(f"{id} 注册事件：{event_name}")
+        self.event_registry[event_name][id]=callback
+        
+    def delete_event(self, event_name: str, id: str):
+        self.logger.debug(f"{id} 删除事件：{event_name}")
+        self.event_registry[event_name].pop(id)
+        
+    def set_event(self, event_name: str, event_data: dict={}):
+        self.logger.debug(f"事件触发：{event_name}")
+        for id, callback in self.event_registry[event_name].items():
+            callback(event_data)
     
     def register_agent(self, agent: Agent):
         """注册Agent到系统"""
@@ -64,7 +83,7 @@ class AgentSystem(Loggable):
         self.logger.info("系统已停止")
     
     #TODO: 我需要更深思熟虑的考虑状态信息的数据结构
-    def __get__(self, id: str)  -> Optional[Agent]:
+    def get(self, id: str)  -> Optional[Agent]:
         return self.agents.get(id)
     
     

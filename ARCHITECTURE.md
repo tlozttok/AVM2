@@ -1,83 +1,232 @@
-# 语义自举系统：高层架构设计
+# AVM2 系统架构设计
 
-基于拉康三界理论和语义自举范式，本系统分为三个核心注册层：象征界、想象界、实在界，通过微Agent和运动模块实现耦合。
+基于拉康三界理论和语义自举范式的AI系统架构。
 
-## 1. 三注册架构
+## 1. 核心架构设计
 
-### 象征界（Symbolic Register）
-- **功能**：假想的基因库，存储所有经验、知识、历史为纯语义字符串
-- **实现**：文件系统中存储的纯文本文件，无结构化数据
-- **访问方式**：通过运动模块间接访问，算法不直接操作
+### 三界分离架构
 
-### 想象界（Imaginary Register）
-- **功能**：上下文构建层，微Agent激活时临时组合字符串
-- **实现**：微Agent的运行时上下文，包含背景知识、原始基因、输入信息
-- **特点**：基因在想象界和象征界之间流动（类似甲基化）
+#### 象征界（Symbolic Register）
+- **功能**: 知识库和配置存储，存储所有Agent配置和语义信息
+- **实现**: YAML配置文件系统
+- **包含**: 
+  - Agent配置（Agents/目录）
+  - 系统配置（config.json）
+  - 消息缓存和连接关系
 
-### 实在界（Real Register）
-- **功能**：物理世界反馈：代码编译、测试通过、超时等
-- **实现**：运动模块执行代码并返回结果
-- **特点**：不讲道理，只说"是"或"否"
+#### 想象界（Imaginary Register）
+- **功能**: 运行时上下文和语义处理层
+- **实现**: Agent运行时状态和消息处理
+- **包含**:
+  - Agent激活上下文
+  - 消息缓存（bg_message_cache, input_message_cache）
+  - LLM语义处理
+
+#### 实在界（Real Register）
+- **功能**: 物理世界反馈和执行层
+- **实现**: 系统Agent和实际执行
+- **包含**:
+  - 系统Agent（InputAgent/OutputAgent/IOAgent）
+  - 用户交互（GUI窗口）
+  - 系统监控和执行反馈
 
 ## 2. 核心组件
 
-### 微Agent（Micro-Agent）
-- **角色**："RNA式"原初实体，既处理语义又触发操作
-- **激活方式**：
-  - 主体激活：主动拉取依赖信息
-  - 被动激活：监听消息，满足条件响应
-  - 触发激活：由时间、语境或内部信号联想触发
-- **上下文构成**：
-  - 背景知识：相对静态，系统提示词附加
-  - 原始基因：从象征界拉取的语义片段
-  - 输入信息：用户或Agent消息
+### Agent 系统
 
-### 运动模块（Movement Module）
-- **功能**：持续监听想象界输出，检测可执行片段并投射到实在界
-- **实现**：检测包含 `def`, `print` 等的字符串，执行并反馈结果
-- **传感机制**：Agent不主动感知，由实在界程序提供输入
-
-### 淘汰机制（Elimination Mechanism）
-- **奖励事件**：成功行为生成事件，用于信用分配
-- **死亡事件**：长期无效Agent被删除时生成事件
-- **信用分配**：简单衰减规则（如C得1.0，B得0.8，A得0.64）
-- **变异Agent**：执行字符串变异操作
-
-## 3. 数据流
-
-1. **激活流**：触发 → 上下文构建 → 微Agent处理 → 输出
-2. **执行流**：输出 → 运动模块 → 实在界执行 → 结果反馈
-3. **学习流**：反馈 → 奖励/死亡事件 → 背景知识更新 → 淘汰决策
-4. **演化流**：长期无奖励 → Agent淘汰 → 基因库变异 → 系统重置
-
-## 4. 文件结构
-
-```
-AVM2/
-├── SymbolicRegister/     # 象征界：基因库
-│   ├── Genes/           # 纯语义字符串文件
-│   └── GeneLibrary/     # 基因库管理接口
-├── ImaginaryRegister/    # 想象界：上下文与Agent
-│   ├── MicroAgents/     # 微Agent框架
-│   ├── Contexts/        # 上下文管理
-│   └── Activation/      # 激活机制
-├── RealRegister/         # 实在界：物理反馈
-│   ├── MovementModule/  # 运动模块
-│   └── Execution/       # 执行环境
-├── Evolution/            # 演化机制
-│   ├── Rewards/         # 奖励系统
-│   ├── Elimination/     # 淘汰机制
-│   └── Mutations/       # 变异代理
-└── System/               # 系统级组件
-    ├── Main.py          # 主入口
-    ├── Config.json      # 系统配置
-    └── Events/          # 事件系统
+#### Agent 基类
+```python
+class Agent(Loggable):
+    """微Agent实体基类"""
+    - id: Agent唯一标识
+    - prompt: LLM提示词
+    - input_connections: 输入连接映射
+    - output_connections: 输出连接映射
+    - message_caches: 消息缓存
+    - sync_to_file() / sync_from_file(): 文件同步
 ```
 
-## 5. 开发路线图（自上而下）
+#### 系统Agent抽象类
+- **InputAgent**: 系统输入Agent，将现实世界转化为字符串消息
+- **OutputAgent**: 系统输出Agent，将字符串消息转化为实际行动
+- **IOAgent**: InputAgent和OutputAgent的结合版本
 
-1. **系统级组件**：创建事件系统和主入口
-2. **运动模块**：实现符号-实在耦合
-3. **微Agent框架**：构建原初实体
-4. **三注册接口**：实现各注册层功能
-5. **演化机制**：实现淘汰与变异
+#### 消息系统
+- **MessageBus**: 异步消息总线，管理Agent间通信
+- **AgentMessage**: 标准消息格式
+- **异步处理**: 使用asyncio实现非阻塞消息传递
+
+### 系统Agent实现
+
+#### UserInputAgent
+- **类型**: InputAgent
+- **功能**: 通过GUI窗口收集用户输入
+- **特性**: 
+  - Tkinter GUI界面
+  - 多线程支持
+  - 实时输入队列
+
+#### AgentCreatorOutputAgent
+- **类型**: OutputAgent
+- **功能**: 创建普通Agent的系统输出Agent
+
+#### SystemMonitorInputAgent
+- **类型**: InputAgent
+- **功能**: 系统监控输入Agent，定期报告系统状态
+
+## 3. 数据流设计
+
+### Agent激活流程
+```
+触发激活 → 上下文构建 → 消息处理 → LLM处理 → 输出解析 → 消息发送
+```
+
+### 文件同步流程
+```
+Agent状态变化 → 自动同步 → YAML文件更新 → 系统重启恢复
+```
+
+### 消息传递流程
+```
+发送Agent → MessageBus → 接收Agent → 消息处理 → 响应生成
+```
+
+## 4. 文件结构设计
+
+### 核心模块
+```
+driver/
+├── driver.py             # Agent基类、消息总线、文件同步
+├── system_agents.py      # 系统Agent抽象类
+└── async_system.py       # 异步系统
+```
+
+### 系统Agent实现
+```
+system_interface_agents/
+├── user_input_agent.py              # 用户输入Agent
+├── agent_creator_output_agent.py    # Agent创建器
+└── system_monitor_input_agent.py    # 系统监控器
+```
+
+### 配置管理
+```
+Agents/
+├── genesis_agent.yaml               # 初始Agent
+└── SystemAgents/
+    ├── user_input_agent.yaml        # 用户输入Agent配置
+    ├── agent_creator_agent.yaml     # Agent创建器配置
+    └── system_monitor_agent.yaml    # 系统监控器配置
+```
+
+### 工具模块
+```
+utils/
+└── logger.py             # 日志系统
+```
+
+## 5. 配置系统
+
+### Agent配置格式
+```yaml
+id: agent_id
+prompt: |
+  多行提示词内容
+input_connections:
+  sender_id: input_channel
+output_connections:
+  output_channel: [receiver_ids]
+input_message_keyword:
+  - activation_keywords
+metadata:
+  type: Agent/InputAgent/OutputAgent
+  class_name: ClassName  # 系统Agent专用
+```
+
+### 系统配置
+```json
+{
+  "system": {
+    "architecture": "Three-layer architecture",
+    "context_management": {
+      "default_stateless": true,
+      "message_driven": true
+    },
+    "agent_activation_modes": [
+      "subject_activation",
+      "passive_activation", 
+      "trigger_activation"
+    ]
+  }
+}
+```
+
+## 6. 异步设计
+
+### 异步消息总线
+- 使用asyncio.Queue实现消息队列
+- 支持并发消息处理
+- 避免阻塞系统运行
+
+### Agent异步方法
+- `async def receive_message()`: 异步接收消息
+- `async def send_message()`: 异步发送消息
+- `async def _activate()`: 异步激活处理
+
+## 7. 日志系统
+
+### 日志格式
+```
+[时间] 类名.方法名(行号)[级别]:消息内容
+```
+
+### 日志级别
+- **DEBUG**: 详细调试信息
+- **INFO**: 常规操作信息
+- **WARNING**: 警告信息
+- **ERROR**: 错误信息
+
+### 日志文件
+- 每个类有独立的日志文件
+- 存储在logs/目录
+- 支持UTF-8编码
+
+## 8. 系统启动流程
+
+1. **配置扫描**: 递归扫描Agents文件夹下的YAML文件
+2. **动态创建**: 使用eval(class_name)根据配置创建Agent实例
+3. **状态同步**: 调用sync_from_file加载Agent状态
+4. **系统注册**: 将Agent注册到AgentSystem
+5. **启动运行**: 启动消息总线，运行系统
+6. **GUI启动**: 启动用户输入GUI窗口
+
+## 9. 设计原则
+
+### 语义自举原则
+- 表达能力等价性
+- 语义体系与编程体系分离
+- 文件同步机制
+
+### 工程实践原则
+- 类型注解
+- 异步编程
+- 模块化设计
+- 错误处理
+- 日志记录
+
+## 10. 扩展性设计
+
+### 系统Agent扩展
+- 继承InputAgent/OutputAgent/IOAgent基类
+- 实现抽象方法
+- 创建对应的YAML配置文件
+
+### 配置驱动
+- 所有行为通过配置定义
+- 支持运行时配置修改
+- 无硬编码逻辑
+
+### 插件化架构
+- 系统Agent作为插件
+- 动态加载和卸载
+- 独立开发和测试
