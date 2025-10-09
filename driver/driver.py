@@ -1,6 +1,6 @@
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple, Optional
+from typing import Callable, Dict, List, Literal, Tuple, Optional
 from openai import AsyncOpenAI
 import asyncio
 import os
@@ -113,7 +113,7 @@ class _InputConnections:
     输入连接映射：{发送者Agent ID -> 本Agent的输入通道}
     用于通过发送者ID找到对应的输入通道
     """
-    connections:Dict[str, str]
+    connections:Dict[str, Keyword]
     
     def __init__(self):
         self.connections = {}
@@ -140,7 +140,7 @@ class _OutputConnections:
     输出连接映射：{输出通道 -> [接收者Agent ID列表]}
     用于通过输出通道找到对应的接收者ID列表
     """
-    connections:Dict[str, List[str]]
+    connections:Dict[Keyword, List[str]]
     
     def __init__(self):
         self.connections = {}
@@ -188,13 +188,18 @@ class AgentData():
     id: str
     type: str
     prompt: str
-    input_connections: Dict[str, str]
-    output_connections: Dict[str, List[str]]
+    input_connections: Dict[str, Keyword]
+    output_connections: Dict[Keyword, List[str]]
     input_message_keyword: List[str]
     bg_message_cache: List[Tuple[AgentMessageData,bool]]
     input_message_cache: List[AgentMessageData]
     meta_data: Dict
     
+    @property
+    def keywords(self) -> Dict[Literal["input_keywords","output_keywords"], List[str]]:
+        input_keywords = self.input_connections.values()
+        output_keywords = self.output_connections.keys()
+        return {"input_keywords": input_keywords, "output_keywords": output_keywords}
     
     
 
