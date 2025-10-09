@@ -7,7 +7,7 @@ import time
 import json
 import yaml
 import os
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Optional, Set, Any
 
 from utils.logger import Loggable
 from .driver import Agent, MessageBus
@@ -25,17 +25,23 @@ class AgentSystem(Loggable):
         self.start_time = time.time()
         self.message_count = 0
         self.activation_count = 0
+        
+        self.logger.info("Agent系统初始化完成")
     
     def register_agent(self, agent: Agent):
         """注册Agent到系统"""
+        self.logger.info(f"注册Agent: {agent.id}")
         self.agents[agent.id] = agent
         agent.message_bus = self.message_bus
         self.message_bus.register_agent(agent)
     
     async def start(self):
         """启动整个系统"""
+        self.logger.info("启动Agent系统...")
+        self.logger.debug("启动消息总线...")
         await self.message_bus.start()
         
+        self.logger.debug("筛选InputAgent...")
         # 筛选InputAgent启动它们的输入循环
         input_agents = []
         for agent in self.agents.values():
@@ -45,7 +51,9 @@ class AgentSystem(Loggable):
         
         # 启动所有InputAgent的输入循环
         for input_agent in input_agents:
+            self.logger.debug(f"启动输入循环：{input_agent.id}")
             await input_agent.start_input()
+            
             
         print("Agent系统已启动")
         
@@ -53,9 +61,12 @@ class AgentSystem(Loggable):
     async def stop(self):
         """停止系统"""
         await self.message_bus.stop()
-        print("Agent系统已停止")
+        self.logger.info("系统已停止")
     
     #TODO: 我需要更深思熟虑的考虑状态信息的数据结构
+    def __get__(self, id: str)  -> Optional[Agent]:
+        return self.agents.get(id)
+    
     
     def get_system_metadata(self) -> Dict[str, Any]:
         """获取系统元信息（轻量级）"""

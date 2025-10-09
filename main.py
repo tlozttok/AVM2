@@ -21,20 +21,26 @@ DEBUG_MODE = True  # 设置为True时禁用自动文件同步
 async def main():
     """主程序入口"""
     
-    
+    basic_logger.info("进入主函数")
     system = AgentSystem()
     async_system.SYMBOLIC_REAL=system
+    
+    basic_logger.info("开始加载普通Agent")
     
     # 遍历Agents文件夹中的普通Agent
     agent_files = glob.glob("Agents/*.yaml")
     for agent_file in agent_files:
-        agent = Agent("toBeInit")
+        agent = Agent("")
         agent.sync_from_file(agent_file)
         
         # 设置自动同步状态
         agent.auto_sync_enabled = not DEBUG_MODE
         
         system.register_agent(agent)
+        basic_logger.info(f"加载普通Agent: {agent.id}")
+        
+    basic_logger.info("加载普通Agent完成")
+    basic_logger.info("开始加载系统Agent")
 
     # 遍历系统Agent
     system_agent_files = glob.glob("Agents/SystemAgents/*.yaml")
@@ -52,22 +58,31 @@ async def main():
         agent.auto_sync_enabled = not DEBUG_MODE
         
         system.register_agent(agent)
+        
+        basic_logger.info(f"加载系统Agent:{agent.id}")
+    
+    basic_logger.info("加载系统Agent完成")
     
     await system.start()
+    
+    basic_logger.info("系统加载完成")
     
     try:
         
         # 保持程序运行，等待消息
         print("📡 系统正在运行")
         print("按 Ctrl+C 停止系统")
+        basic_logger.info("开始运行系统")
         
         # 创建一个永久等待的future
         await asyncio.Future()
         
     except KeyboardInterrupt:
         print("\n🛑 收到停止信号，正在关闭系统...")
+        basic_logger.info("收到停止信号，正在关闭系统")
     finally:
         await system.stop()
+        basic_logger.info("系统已关闭")
 
 
 if __name__ == "__main__":

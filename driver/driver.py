@@ -1,6 +1,5 @@
-
-
-
+from collections import namedtuple
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple, Optional
 from openai import AsyncOpenAI
 import asyncio
@@ -109,7 +108,7 @@ class Context:
         
 
 
-class InputConnections:
+class _InputConnections:
     """
     输入连接映射：{发送者Agent ID -> 本Agent的输入通道}
     用于通过发送者ID找到对应的输入通道
@@ -136,7 +135,7 @@ class InputConnections:
         """获取所有输入通道列表"""
         return list(self.connections.values())
     
-class OutputConnections:
+class _OutputConnections:
     """
     输出连接映射：{输出通道 -> [接收者Agent ID列表]}
     用于通过输出通道找到对应的接收者ID列表
@@ -182,6 +181,23 @@ class AgentMessage:
     def to_str(self)->str:
         return f"{self.sender_keyword} - {self.receiver_keyword}: {self.content}"
 
+AgentMessageData=namedtuple("AgentMessageData", ["sender_keyword", "content", "receiver_keyword"])
+
+@dataclass
+class AgentData():
+    id: str
+    type: str
+    prompt: str
+    input_connections: Dict[str, str]
+    output_connections: Dict[str, List[str]]
+    input_message_keyword: List[str]
+    bg_message_cache: List[Tuple[AgentMessageData,bool]]
+    input_message_cache: List[AgentMessageData]
+    meta_data: Dict
+    
+    
+    
+
 class Agent(Loggable):
     """
     微Agent实体
@@ -195,17 +211,57 @@ class Agent(Loggable):
     def __init__(self, id: str, prompt: str = "", message_bus: 'MessageBus' = None):
         self.id = id
         self.prompt = prompt
-        self.input_connections = InputConnections()
-        self.output_connections = OutputConnections()
+        self.input_connections = _InputConnections()
+        self.output_connections = _OutputConnections()
         self.bg_message_cache:  list[Tuple[AgentMessage,bool]] = []
         self.input_message_cache: list[AgentMessage] = []
         self.input_message_keyword = []
         self.input_check_function:Callable[[List[Tuple[Keyword,Keyword]]],bool] = \
             self.default_input_check_function
+        self.meta_data = {}
         self.message_bus = message_bus
         self._env_config = None  # 缓存.env配置
         self._file_path = None  # 缓存文件路径
         self.auto_sync_enabled = True  # 默认启用自动同步
+        
+    @property
+    def data(self) -> AgentData:
+        """返回Agent的所有核心数据"""
+        self.logger.debug("记录Agent数据")
+        # 转换bg_message_cache为AgentMessageData格式
+        bg_message_data = [
+            (
+                AgentMessageData(
+                    sender_keyword=msg.sender_keyword,
+                    content=msg.content,
+                    receiver_keyword=msg.receiver_keyword
+                ),
+                is_unused
+            )
+            for msg, is_unused in self.bg_message_cache
+        ]
+        
+        # 转换input_message_cache为AgentMessageData格式
+        input_message_data = [
+            AgentMessageData(
+                sender_keyword=msg.sender_keyword,
+                content=msg.content,
+                receiver_keyword=msg.receiver_keyword
+            )
+            for msg in self.input_message_cache
+        ]
+        
+        return AgentData(
+            id=self.id,
+            type=self.__class__.__name__,
+            prompt=self.prompt,
+            input_connections=self.input_connections.connections,
+            output_connections=self.output_connections.connections,
+            input_message_keyword=self.input_message_keyword,
+            bg_message_cache=bg_message_data,
+            input_message_cache=input_message_data,
+            meta_data=self.meta_data
+        )
         
     def default_input_check_function(self,keywords:List[Tuple[Keyword,Keyword]])->bool:
         received_keywords = [k[1] for k in keywords]
@@ -216,6 +272,7 @@ class Agent(Loggable):
         将Agent状态同步到文件
         使用人类可编辑的格式（YAML或JSON）
         """
+        self.logger.info(f"正在将Agent {self.id}状态同步到文件")
         if file_path is None:
             file_path = self._get_agent_file_path()
         
@@ -243,20 +300,17 @@ class Agent(Loggable):
                 }
                 for msg in self.input_message_cache
             ],
-            "metadata": {
-                "type": "Agent",
-                "version": "1.0"
-            }
+            "metadata": self.meta_data
         }
         
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
                 yaml.dump(agent_data, f, allow_unicode=True, indent=2, sort_keys=False)
-            #print(f"✅ Agent '{self.id}' 已保存到文件: {file_path}")
+            self.logger.info(f"Agent '{self.id}' 已保存到文件: {file_path}")
                 
             
         except Exception as e:
-            #print(f"❌ 保存Agent '{self.id}' 到文件失败: {e}")
+            self.logger.warning(f"保存Agent '{self.id}' 到文件失败: {e}")
             pass
     
     def _get_agent_file_path(self) -> str:
@@ -290,13 +344,17 @@ class Agent(Loggable):
         self._file_path = str(agents_dir / f"{self.id}.yaml")
         return self._file_path
     
-    def sync_from_file(self, file_path: str) -> None:
+    def sync_from_file(self, file_path: str = None) -> None:
         """
         从文件加载Agent状态
         支持YAML和JSON格式
         """
+        
+        if file_path is None:
+            file_path = self._get_agent_file_path()
+        
         if not os.path.exists(file_path):
-            print(f"❌ 文件不存在: {file_path}")
+            self.logger.error(f"文件不存在: {file_path}。忘记创建该Agent的文件了吗？")
             return
         
         try:
@@ -318,6 +376,7 @@ class Agent(Loggable):
             
             # 验证数据格式
             if not isinstance(agent_data, dict) or "id" not in agent_data:
+                self.logger.error(f"无效的Agent数据格式: {file_path}")
                 raise ValueError("无效的Agent数据格式")
             
             # 更新Agent状态
@@ -367,10 +426,13 @@ class Agent(Loggable):
             # 缓存文件路径
             self._file_path = file_path
             
-            print(f"✅ Agent '{self.id}' 已从文件加载: {file_path}")
+            self.logger.info(f"Agent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
-            print(f"❌ 从文件加载Agent失败: {e}")
+            if file_path or self.id!="":
+                self.logger.warning(f"Agent {self.id} 从文件加载Agent失败: {e}")
+            else:
+                self.logger.error(f"Agent无法从文件中初始化！")
     
     def _load_env_config(self) -> dict:
         """从项目根目录的.env文件加载配置"""
@@ -391,7 +453,6 @@ class Agent(Loggable):
                         if line and not line.startswith('#') and '=' in line:
                             key, value = line.split('=', 1)
                             config[key.strip()] = value.strip()
-                print(f"✅ 从文件加载环境配置: {env_file}")
             except Exception as e:
                 print(f"❌ 读取.env文件失败: {e}")
         else:
@@ -415,16 +476,23 @@ class Agent(Loggable):
     
     async def receive_message(self, message: AgentMessage, sender_id:str) -> None:
         """异步接收消息"""
+        self.logger.info(f"Agent {self.id} 接受到来自{sender_id}的消息")
+        self.logger.debug(f"消息内容：{message.content} ({self.id})")
         input_channel = self.input_connections.get_keyword(sender_id)
+        self.logger.debug(f"输入通道：{input_channel}  ({self.id})")
         if input_channel:
             message.receiver_keyword = input_channel
         if input_channel in self.input_message_keyword:
             self.input_message_cache.append(message)
+            self.logger.debug(f"缓存输入消息：{message.content} ({self.id})")
         else:
             self.bg_message_cache.append((message, True))  # 新消息标记为未使用
+            self.logger.debug(f"缓存背景消息：{message.content} ({self.id})")
             
         # 检查是否应该激活
+        self.logger.debug(f"检查是否应该激活 ({self.id})")
         if self.input_check_function([(msg.sender_keyword, msg.receiver_keyword) for msg in self.input_message_cache]):
+            self.logger.debug(f"激活 ({self.id})")
             await self._activate()
         
             
@@ -437,12 +505,13 @@ class Agent(Loggable):
         """
         # 解析原始内容，提取输出通道对应的消息
         channel_messages = self._parse_keyword_messages(raw_content)
-        
+        self.logger.debug(f"Agent {self.id} 解析输出完成")
         # 为每个输出通道消息创建AgentMessage并发送
+        self.logger.info(f"Agent {self.id} 正在发送消息...")
         for output_channel, content in channel_messages.items():
             # 获取该输出通道对应的所有接收者ID
             receiver_ids = self.output_connections.get_id_list(output_channel)
-            
+            self.logger.debug(f"Agent {self.id} 输出通道 {output_channel} 的接收者列表:{receiver_ids}")
             if receiver_ids:
                 for receiver_id in receiver_ids:
                     # 创建消息
@@ -460,6 +529,7 @@ class Agent(Loggable):
         <think>思考过程</think><keyword1>内容1</keyword1><keyword2>内容2</keyword2>
         """
         keyword_messages = {}
+        self.logger.debug(f"Agent {self.id} 解析输出")
         
         # 首先提取think部分（如果有）
         think_start = raw_content.find("<think>")
@@ -475,11 +545,13 @@ class Agent(Loggable):
         import re
         pattern = r'<([\w\u4e00-\u9fff]+)>(.*?)</\1>'
         matches = re.findall(pattern, content_after_think, re.DOTALL)
-        
+        keywords = []
         for keyword, content in matches:
             # 检查该关键词是否在output_connections中
             if keyword in self.output_connections.keywords:
                 keyword_messages[keyword] = content.strip()
+            keywords.append(keyword)
+        self.logger.debug(f"Agent {self.id} 输出关键词{keywords}")
         
         return keyword_messages
             
@@ -492,7 +564,7 @@ class Agent(Loggable):
         """
         deduplicated_messages = {}
         reserved_messages = []
-        
+        message_cache_len=len(self.bg_message_cache)
         for message, is_unused in self.bg_message_cache:
             if not is_unused:
                 # 已使用的消息：基于发送者和接收者关键词去重
@@ -500,19 +572,24 @@ class Agent(Loggable):
             else:
                 # 未使用的消息：保留
                 reserved_messages.append((message, is_unused))
+                deduplicated_messages[(message.sender_keyword, message.receiver_keyword)] = None
                 
         # 合并去重后的已使用消息和保留的未使用消息
-        self.bg_message_cache = [(message, False) for message in deduplicated_messages.values()] + reserved_messages
+        self.bg_message_cache = [(message, False) for message in deduplicated_messages.values() if message is not None] + reserved_messages
+        self.logger.debug(f"Agent {self.id} 去重{message_cache_len-len(self.bg_message_cache)}条消息，保留{len(self.bg_message_cache)}条消息")
     
     async def _activate(self):
         """异步激活Agent，调用大模型API"""
-        
+        self.logger.info(f"Agent {self.id} 正在激活...")
+        self.logger.info(f"Agent {self.id} 消息去重")
         self.reduce()
         
         # 在激活前自动同步状态到文件（如果启用）
         if self.auto_sync_enabled:
-                self.sync_to_file()
+            self.debug(f"Agent {self.id} 正在自动同步状态到文件...")
+            self.sync_to_file()
         
+        self.logger.debug(f"Agent {self.id} 构建上下文")
         # 构建上下文
         output_keywords = self.output_connections.keywords if hasattr(self.output_connections, 'get_keyword') else []
         bg_messages = [message for message, is_unused in self.bg_message_cache]
@@ -522,6 +599,8 @@ class Agent(Loggable):
             self.input_message_cache,
             output_keywords
         )
+        
+        self.logger.debug(f"Agent {self.id}激活，上下文为：{messages}")
         
         # 标记所有背景消息为已使用
         self.bg_message_cache = [(message, False) for message, is_unused in self.bg_message_cache]
@@ -554,6 +633,7 @@ class Agent(Loggable):
             
         except Exception as e:
             print(f"API调用失败: {e}")
+            self.logger.critical(f"API调用失败: {e}")
         
         
         
