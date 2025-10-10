@@ -132,7 +132,7 @@ class UserInputAgent(InputAgent):
             # 非阻塞地从队列中获取输入
             if not self.input_queue.empty():
                 user_input = self.input_queue.get_nowait()
-                print(f"UserInputAgent: 收到用户输入: {user_input}")
+                self.logger.info(f"UserInputAgent: 收到用户输入: {user_input}")
                 return user_input
         except queue.Empty:
             pass
@@ -153,7 +153,7 @@ class UserInputAgent(InputAgent):
         格式化消息
         将用户输入格式化为标准消息格式
         """
-        return f"用户输入: {input_data}"
+        return f"<user_input>{input_data}</user_input>"
     
     async def stop_input(self):
         """停止输入收集并关闭窗口"""

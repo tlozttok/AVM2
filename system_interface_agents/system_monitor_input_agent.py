@@ -68,12 +68,14 @@ class SystemMonitorInputAgent(InputAgent):
         agent_input_connections=[data.input_connections for data in agent_data]
         agent_output_connections=[data.output_connections for data in agent_data]
         agent_input_keywords=[data.input_message_keyword for data in agent_data]
+        agent_meta_data=[data.meta_data for data in agent_data]
         agent_data=[
             {"id":agent_ids[i],
              "keywords":agent_keys[i],
              "input_connections":agent_input_connections[i],
              "output_connections":agent_output_connections[i],
-             "input_message_keyword":agent_input_keywords[i]
+             "input_message_keyword":agent_input_keywords[i],
+             "meta_data":agent_meta_data[i],
              }
             for i in  range(len(agent_ids))
         ]
