@@ -477,6 +477,142 @@ class Agent(Loggable):
         # 其次从系统环境变量读取
         return os.environ.get(key, default)
     
+    # Connection Management Methods
+    
+    def add_input_connection(self, sender_id: str, input_keyword: Keyword) -> None:
+        """
+        添加输入连接
+        Args:
+            sender_id: 发送者Agent ID
+            input_keyword: 本Agent的输入关键词
+        """
+        self.input_connections.set_keyword(sender_id, input_keyword)
+        self.logger.info(f"Agent {self.id} 添加输入连接: {sender_id} -> {input_keyword}")
+        
+        # 自动同步到文件
+        if self.auto_sync_enabled:
+            self.sync_to_file()
+    
+    def remove_input_connection(self, sender_id: str) -> bool:
+        """
+        移除输入连接
+        Args:
+            sender_id: 发送者Agent ID
+        Returns:
+            bool: 是否成功移除
+        """
+        if sender_id in self.input_connections.connections:
+            keyword = self.input_connections.connections[sender_id]
+            del self.input_connections.connections[sender_id]
+            self.logger.info(f"Agent {self.id} 移除输入连接: {sender_id} -> {keyword}")
+            
+            # 自动同步到文件
+            if self.auto_sync_enabled:
+                self.sync_to_file()
+            return True
+        return False
+    
+    def add_output_connection(self, output_keyword: Keyword, receiver_id: str) -> None:
+        """
+        添加输出连接
+        Args:
+            output_keyword: 输出关键词
+            receiver_id: 接收者Agent ID
+        """
+        current_receivers = self.output_connections.get_id_list(output_keyword)
+        if receiver_id not in current_receivers:
+            current_receivers.append(receiver_id)
+            self.output_connections.set_id_list(output_keyword, current_receivers)
+            self.logger.info(f"Agent {self.id} 添加输出连接: {output_keyword} -> {receiver_id}")
+            
+            # 自动同步到文件
+            if self.auto_sync_enabled:
+                self.sync_to_file()
+    
+    def remove_output_connection(self, output_keyword: Keyword, receiver_id: str) -> bool:
+        """
+        移除输出连接
+        Args:
+            output_keyword: 输出关键词
+            receiver_id: 接收者Agent ID
+        Returns:
+            bool: 是否成功移除
+        """
+        current_receivers = self.output_connections.get_id_list(output_keyword)
+        if receiver_id in current_receivers:
+            current_receivers.remove(receiver_id)
+            if current_receivers:
+                self.output_connections.set_id_list(output_keyword, current_receivers)
+            else:
+                # 如果没有接收者了，移除整个输出关键词
+                del self.output_connections.connections[output_keyword]
+            self.logger.info(f"Agent {self.id} 移除输出连接: {output_keyword} -> {receiver_id}")
+            
+            # 自动同步到文件
+            if self.auto_sync_enabled:
+                self.sync_to_file()
+            return True
+        return False
+    
+    def set_activation_keywords(self, keywords: List[Keyword]) -> None:
+        """
+        设置激活关键词列表
+        Args:
+            keywords: 激活关键词列表
+        """
+        self.input_message_keyword = keywords
+        self.logger.info(f"Agent {self.id} 设置激活关键词: {keywords}")
+        
+        # 自动同步到文件
+        if self.auto_sync_enabled:
+            self.sync_to_file()
+    
+    def add_activation_keyword(self, keyword: Keyword) -> None:
+        """
+        添加单个激活关键词
+        Args:
+            keyword: 激活关键词
+        """
+        if keyword not in self.input_message_keyword:
+            self.input_message_keyword.append(keyword)
+            self.logger.info(f"Agent {self.id} 添加激活关键词: {keyword}")
+            
+            # 自动同步到文件
+            if self.auto_sync_enabled:
+                self.sync_to_file()
+    
+    def remove_activation_keyword(self, keyword: Keyword) -> bool:
+        """
+        移除激活关键词
+        Args:
+            keyword: 激活关键词
+        Returns:
+            bool: 是否成功移除
+        """
+        if keyword in self.input_message_keyword:
+            self.input_message_keyword.remove(keyword)
+            self.logger.info(f"Agent {self.id} 移除激活关键词: {keyword}")
+            
+            # 自动同步到文件
+            if self.auto_sync_enabled:
+                self.sync_to_file()
+            return True
+        return False
+    
+    def update_prompt(self, new_prompt: str) -> None:
+        """
+        更新Agent的提示词
+        Args:
+            new_prompt: 新的提示词
+        """
+        self.prompt = new_prompt
+        self.logger.info(f"Agent {self.id} 更新提示词")
+        
+        # 自动同步到文件
+        if self.auto_sync_enabled:
+            self.sync_to_file()
+    
+    
 
     
     async def receive_message(self, message: AgentMessage, sender_id:str) -> None:

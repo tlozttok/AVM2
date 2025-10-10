@@ -64,7 +64,6 @@ class SystemMonitorInputAgent(InputAgent):
         self.logger.info("获取系统信息...")
         agent_ids=self.agent_system.get_agent_ids()
         agent_data=[self.agent_system.get(id).data for id in agent_ids]
-        #不知道写什么好
         agent_keys=[data.keywords for data in agent_data]
         agent_input_connections=[data.input_connections for data in agent_data]
         agent_output_connections=[data.output_connections for data in agent_data]
@@ -78,4 +77,5 @@ class SystemMonitorInputAgent(InputAgent):
              }
             for i in  range(len(agent_ids))
         ]
-        
+        data={"agents_id":agent_ids,"agents_data":agent_data}
+        return str(data)
