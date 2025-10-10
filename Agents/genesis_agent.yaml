@@ -188,6 +188,7 @@ prompt: |
 input_connections:
   system_monitor_agent: 来自系统监测Agent（system_monitor_agent）的系统报告
   genesis_agent: 来自上一回合的你的保留状态
+  user_input_agent: 用户输入（方向指导）
 
 output_connections:
   自反消息: ["genesis_agent"]
