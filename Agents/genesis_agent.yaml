@@ -199,7 +199,6 @@ input_message_keyword:
 
 metadata:
   type: Agent
-  version: "2.2"
   description: "系统初始Agent，负责引导系统自举过程，支持Agent管理功能，使用agent_creator_output_agent"
   created: "2025-10-03"
   updated: "2025-10-10"

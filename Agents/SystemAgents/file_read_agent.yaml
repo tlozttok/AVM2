@@ -1,0 +1,7 @@
+id: file_read_agent
+
+
+metadata:
+  type: IOAgent
+  class_name: "FileReadIOAgent"
+  description: "文件读取IOAgent"
