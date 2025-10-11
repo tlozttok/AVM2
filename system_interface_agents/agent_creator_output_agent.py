@@ -86,7 +86,8 @@ class AgentCreatorOutputAgent(OutputAgent):
         self.agent_system.register_agent(new_agent)
         
         # 同步到文件
-        new_agent.sync_to_file()
+        if self.auto_sync_enabled:
+            new_agent.sync_to_file()
         
         self.logger.info(f"成功创建Agent: {agent_id}")
         return True

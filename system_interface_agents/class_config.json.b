@@ -1,6 +1,0 @@
-{
-    "agent_creator_agent": "agent_creator_output_agent.AgentCreatorOutputAgent",
-    "system_monitor_agent": "system_monitor_input_agent.SystemMonitorInputAgent",
-    "user_input_agent": "user_input_agent.UserInputAgent",
-    "file_read_agent": "file_read_io_agent.FileReadIOAgent"
-}
