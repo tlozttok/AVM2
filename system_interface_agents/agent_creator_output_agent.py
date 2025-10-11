@@ -235,6 +235,7 @@ class AgentCreatorOutputAgent(OutputAgent):
             
             if success:
                 self.logger.info(f"操作 {operation_type} 执行成功")
+                self.agent_system.set_event("SystemChanged")
             else:
                 self.logger.error(f"操作 {operation_type} 执行失败")
             

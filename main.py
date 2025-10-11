@@ -56,7 +56,7 @@ def create_class_mapping(class_config):
             # 获取类对象
             agent_class = getattr(module, class_name)
             class_mapping[agent_id] = agent_class
-            basic_logger.info(f"成功映射: {agent_id} -> {class_path}")
+            basic_logger.debug(f"成功映射: {agent_id} -> {class_path}")
             
         except ImportError as e:
             basic_logger.error(f"导入模块失败 {module_name}: {e}")
