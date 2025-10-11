@@ -28,7 +28,7 @@ class SystemMonitorInputAgent(InputAgent):
         self.system_changed = False
         self.agent_system.register_event("SystemChanged", self.on_system_changed, self.id)
     
-    def on_system_changed(self):   
+    def on_system_changed(self,event_data):   
         self.logger.debug("系统改变事件被触发了")
         self.system_changed = True 
     

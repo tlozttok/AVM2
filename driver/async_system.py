@@ -46,7 +46,10 @@ class AgentSystem(Loggable):
     def set_event(self, event_name: str, event_data: dict={}):
         self.logger.debug(f"事件触发：{event_name}")
         for id, callback in self.event_registry[event_name].items():
-            callback(event_data)
+            try:
+                callback(event_data)
+            except Exception as e:
+                self.logger.error(f"事件处理失败：{event_name} {id} {e}")
     
     def register_agent(self, agent: Agent):
         """注册Agent到系统"""
