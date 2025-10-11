@@ -2,7 +2,6 @@
 # 建立窗口收集用户输入
 
 id: user_input_agent
-class_name: UserInputAgent
 input_connections: {}
 
 output_connections:
@@ -12,7 +11,7 @@ input_message_keyword: []
 
 metadata:
   type: InputAgent
-  version: "1.0"
+  class_name: "UserInputAgent"
   description: "用户输入收集Agent，通过窗口界面收集用户输入"
   window_title: "AVM2 用户输入"
   window_size: [400, 200]
