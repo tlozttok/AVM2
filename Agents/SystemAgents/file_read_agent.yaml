@@ -1,5 +1,8 @@
 id: file_read_agent
 
+output_connections:
+  system_report: ["genesis_agent"]
+
 
 metadata:
   type: IOAgent

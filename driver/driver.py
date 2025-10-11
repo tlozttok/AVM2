@@ -665,7 +665,7 @@ class Agent(Loggable):
                         content=content,
                         receiver_keyword=None  # 接收者会在receive_message中设置
                     )
-                    
+                    self.logger.debug(f"发送消息到 {receiver_id} : {message}")
                     await self.message_bus.send_message(self.id, message, receiver_id)
     
     def _parse_keyword_messages(self, raw_content: str) -> Dict[Keyword, str]:
