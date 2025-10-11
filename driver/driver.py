@@ -180,6 +180,9 @@ class AgentMessage:
         
     def to_str(self)->str:
         return f"{self.sender_keyword} - {self.receiver_keyword}: {self.content}"
+    
+    def __repr__(self):
+        return f"{self.sender_keyword} - {self.receiver_keyword}: {self.content}"
 
 AgentMessageData=namedtuple("AgentMessageData", ["sender_keyword", "content", "receiver_keyword"])
 
@@ -650,7 +653,7 @@ class Agent(Loggable):
         self.logger.debug(f"Agent {self.id} 解析输出完成")
         # 为每个输出通道消息创建AgentMessage并发送
         self.logger.info(f"Agent {self.id} 正在发送消息...")
-        for output_channel, content in channel_messages.items():
+        for output_channel, content in channel_messages:
             # 获取该输出通道对应的所有接收者ID
             receiver_ids = self.output_connections.get_id_list(output_channel)
             self.logger.debug(f"Agent {self.id} 输出通道 {output_channel} 的接收者列表:{receiver_ids}")
@@ -670,7 +673,7 @@ class Agent(Loggable):
         解析原始内容，提取格式为：
         <think>思考过程</think><keyword1>内容1</keyword1><keyword2>内容2</keyword2>
         """
-        keyword_messages = {}
+        keyword_messages = []
         self.logger.debug(f"Agent {self.id} 解析输出")
         
         # 首先提取think部分（如果有）
@@ -691,7 +694,7 @@ class Agent(Loggable):
         for keyword, content in matches:
             # 检查该关键词是否在output_connections中
             if keyword in self.output_connections.keywords:
-                keyword_messages[keyword] = content.strip()
+                keyword_messages.append((keyword,content.strip()))
             keywords.append(keyword)
         self.logger.debug(f"Agent {self.id} 输出关键词{keywords}")
         
