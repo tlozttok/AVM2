@@ -81,7 +81,7 @@ class Context:
 
     
     @classmethod
-    def integrate(system_prompt:str, bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None)-> List[Dict[str, str]] :
+    def integrate(cls,system_prompt:str, bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None)-> List[Dict[str, str]] :
         """集成上下文信息"""
         system_msg = SystemMessage()
         
