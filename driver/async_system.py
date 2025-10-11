@@ -20,6 +20,7 @@ class AgentSystem(Loggable):
     """异步Agent系统管理器"""
     
     def __init__(self):
+        super().__init__()
         self.message_bus = MessageBus()
         self.agents: Dict[str, Agent] = {}
         

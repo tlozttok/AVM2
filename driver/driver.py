@@ -214,6 +214,7 @@ class Agent(Loggable):
     """
     
     def __init__(self, id: str, prompt: str = "", message_bus: 'MessageBus' = None):
+        super().__init__()
         self.id = id
         self.prompt = prompt
         self.input_connections = _InputConnections()
@@ -785,6 +786,7 @@ class MessageBus(Loggable):
     """异步消息总线，管理Agent间的消息传递"""
     
     def __init__(self):
+        super().__init__()
         self.agents: Dict[str, Agent] = {}
         self.message_queue = asyncio.Queue()
         self.is_running = False
