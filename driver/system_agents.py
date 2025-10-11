@@ -341,9 +341,8 @@ class IOAgent(Agent):
     子类必须实现具体的查询处理方法
     """
     
-    def __init__(self, id: str, agent_system, prompt: str = "", message_bus: MessageBus = None):
+    def __init__(self, id: str, prompt: str = "", message_bus: MessageBus = None):
         super().__init__(id, prompt, message_bus)
-        self.agent_system = agent_system
         self.query_handlers = {}
         self.logger.info(f"IOAgent {self.id} 初始化完成")
     

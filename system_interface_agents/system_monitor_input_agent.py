@@ -42,14 +42,15 @@ class SystemMonitorInputAgent(InputAgent):
             
             # 收集系统信息
             system_info = self._collect_system_info()
-            self.first_activate  = False
             return system_info
         
         return None
     
     def should_activate(self, input_data: str) -> bool:
         """只要有系统信息就激活"""
-        return self.first_activate or self.system_changed
+        r=self.first_activate or self.system_changed
+        self.first_activate  = False
+        return r
     
     def format_message(self, input_data: str) -> str:
         """格式化系统报告消息为Agent消息格式"""
