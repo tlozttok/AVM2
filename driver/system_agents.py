@@ -69,7 +69,8 @@ class InputAgent(Agent):
         while self.is_running:
             # 收集输入
             input_data = await self.collect_input()
-            self.logger.debug(f"收到输入: {input_data}")
+            if input_data:
+                self.logger.debug(f"收到输入: {input_data}")
                 
             if input_data and self.should_activate(input_data):
                 # 格式化消息
