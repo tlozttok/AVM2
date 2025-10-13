@@ -432,6 +432,11 @@ class Agent(Loggable):
                     for msg in input_message_cache
                 ]
             
+            # 更新元数据
+            metadata = agent_data.get("metadata", None)
+            if isinstance(metadata, dict):
+                self.meta_data=metadata
+            
             # 缓存文件路径
             self._file_path = file_path
             
