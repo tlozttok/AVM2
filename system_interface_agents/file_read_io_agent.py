@@ -48,20 +48,13 @@ class FileReadIOAgent(IOAgent):
         
         
         if "错误" in response:
-            return f"<{query_receiver_keyword}>"+response+f"</{query_receiver_keyword}>"
+            return f"<file_read>"+response+f"</file_read>"
         
-        # 有些不对劲
-        # IOAgent的设计也许存在本质的问题
-        # 自我同一系统不应该存在即时局部指令查询
-        # 而IOAgent的设计使得要不然就选择局部查询，要不然就只能广播
-        # 一个Agent想要消息，结果产生广播，这不好
-        # 所以还是选择一个InputAgent加一个OutputAgent来处理
-        # 这也导致Agent内部信息分散，促进Agent之间的形成连接，将信息从InputAgent计算并传递到OutputAgent
         
         with open(file_path, 'r', encoding='utf-8') as f:
             f.seek(start_point)
             file_content = f.read(length)
             response+=file_content
             
-        return f"<{query_receiver_keyword}>"+response+f"</{query_receiver_keyword}>"
+        return f"<file_read>"+response+f"</file_read>"
         

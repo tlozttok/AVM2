@@ -187,6 +187,10 @@ class InputAgent(Agent):
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
+            metadata = agent_data.get("metadata", None)
+            if isinstance(metadata, dict):
+                self.meta_data=metadata
+            
             self.logger.info(f"InputAgent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
@@ -326,6 +330,10 @@ class OutputAgent(Agent):
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
             
+            metadata = agent_data.get("metadata", None)
+            if isinstance(metadata, dict):
+                self.meta_data=metadata
+            
             self.logger.info(f"OutputAgent '{self.id}' 已从文件加载: {file_path}")
             
         except Exception as e:
@@ -340,6 +348,7 @@ class IOAgent(Agent):
     InputAgent和OutputAgent的结合版本（抽象基类）
     提供受控输入功能：接收特定格式的消息，进行查询或操作，然后返回结果
     子类必须实现具体的查询处理方法
+    
     """
     
     def __init__(self, id: str, prompt: str = "", message_bus: MessageBus = None):
@@ -465,6 +474,10 @@ class IOAgent(Agent):
             input_message_keyword = agent_data.get("input_message_keyword", None)
             if isinstance(input_message_keyword, list):
                 self.input_message_keyword = input_message_keyword
+                
+            metadata = agent_data.get("metadata", None)
+            if isinstance(metadata, dict):
+                self.meta_data=metadata
             
             self.logger.info(f"IOAgent '{self.id}' 已从文件加载: {file_path}")
             
