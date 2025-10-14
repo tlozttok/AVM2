@@ -17,35 +17,7 @@ from utils.logger import Loggable
 
 type Keyword = str
 
-class UserMessage:
-    content:str
-    
-    def __init__(self):
-        self.content = ""
-    
-    def integrate(self, agent_message:List['AgentMessage']):
-        self.content += "\n".join([message.to_str() for message in agent_message])
-        
-class SystemMessage:
-    content:str
-    
-    def __init__(self):
-        self.content = "你是一个Agent系统中的Agent，基本行为是接受其他Agent的信息，根据后面的提示，进行信息处理，输出一个信息。其他Agent的信息会以'{发送端关键词} - {接收端关键词}:{内容}'的格式输入。你的输出会被处理并发送到和你连接的其他Agent，其他Agent也和你一样，不过连接不同。每个连接有两个关键词，发送端的关键词（输出关键词）和接收端的关键词（输入关键词）。你的输出格式应该是“<think>思考过程</think><keyword1>关键词一的输出</keyword1><keyword2>关键词二的输出</keyword>...”。以下是你的输出关键词列表：\n"
-        
-    def integrate_keywords(self, keywords:List[Keyword]):
-        """集成输出关键词列表"""
-        if keywords:
-            self.content += "\n".join([f"- {keyword}" for keyword in keywords]) + "\n"
-    
-    def integrate_system_prompt(self, system_prompt:str):
-        """集成系统提示词"""
-        if system_prompt:
-            self.content += f"\n\n以下是你的具体任务和背景信息：\n{system_prompt}"
-    
-    def integrate(self, agent_message:List['AgentMessage']):
-        """集成其他Agent的实时信息"""
-        if agent_message:
-            self.content += "\n\n以下是其他Agent的实时信息：\n" + "\n".join([message.to_str() for message in agent_message])
+
 
 class Context:
     
@@ -68,11 +40,7 @@ class Context:
             """集成输出关键词列表"""
             if keywords:
                 self.content += "\n".join([f"- {keyword}" for keyword in keywords]) + "\n"
-        
-        def integrate_system_prompt(self, system_prompt:str):
-            """集成系统提示词"""
-            if system_prompt:
-                self.content += f"\n\n以下是你的具体任务和背景信息：\n{system_prompt}"
+
         
         def integrate(self, agent_message:List['AgentMessage']):
             """集成其他Agent的实时信息"""
@@ -81,21 +49,18 @@ class Context:
 
     
     @classmethod
-    def integrate(cls,system_prompt:str, bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None)-> List[Dict[str, str]] :
+    def integrate(cls,bg_messages:List['AgentMessage'], input_messages:List['AgentMessage'], output_keywords:List[Keyword]=None)-> List[Dict[str, str]] :
         """集成上下文信息"""
-        system_msg = SystemMessage()
+        system_msg = Context.SystemMessage()
         
         # 集成输出关键词
         if output_keywords:
             system_msg.integrate_keywords(output_keywords)
         
-        # 集成系统提示词
-        system_msg.integrate_system_prompt(system_prompt)
-        
         # 集成背景消息
         system_msg.integrate(bg_messages)
         
-        user_msg = UserMessage()
+        user_msg = Context.UserMessage()
         user_msg.integrate(input_messages)
         
         #将上下文转换为OpenAI API格式的消息列表
@@ -190,7 +155,6 @@ AgentMessageData=namedtuple("AgentMessageData", ["sender_keyword", "content", "r
 class AgentData():
     id: str
     type: str
-    prompt: str
     input_connections: Dict[str, Keyword]
     output_connections: Dict[Keyword, List[str]]
     input_message_keyword: List[str]
@@ -219,7 +183,6 @@ class Agent(Loggable):
     def __init__(self, id: str, prompt: str = "", message_bus: 'MessageBus' = None):
         super().__init__()
         self.id = id
-        self.prompt = prompt
         self.input_connections = _InputConnections()
         self.output_connections = _OutputConnections()
         self.bg_message_cache:  list[Tuple[AgentMessage,bool]] = []
@@ -263,7 +226,6 @@ class Agent(Loggable):
         return AgentData(
             id=self.id,
             type=self.__class__.__name__,
-            prompt=self.prompt,
             input_connections=self.input_connections.connections,
             output_connections=self.output_connections.connections,
             input_message_keyword=self.input_message_keyword,
@@ -288,7 +250,6 @@ class Agent(Loggable):
         # 构建Agent数据
         agent_data = {
             "id": self.id,
-            "prompt": self.prompt,
             "input_connections": self.input_connections.connections,
             "output_connections": self.output_connections.connections,
             "input_message_keyword": self.input_message_keyword,
@@ -390,7 +351,6 @@ class Agent(Loggable):
             
             # 更新Agent状态
             self.id = agent_data.get("id", self.id)
-            self.prompt = agent_data.get("prompt", self.prompt)
             
             # 更新连接
             input_connections = agent_data.get("input_connections", None)
@@ -608,20 +568,6 @@ class Agent(Loggable):
             return True
         return False
     
-    def update_prompt(self, new_prompt: str) -> None:
-        """
-        更新Agent的提示词
-        Args:
-            new_prompt: 新的提示词
-        """
-        self.prompt = new_prompt
-        self.logger.info(f"Agent {self.id} 更新提示词")
-        
-        # 自动同步到文件
-        if self.auto_sync_enabled:
-            self.sync_to_file()
-    
-    
 
     
     async def receive_message(self, message: AgentMessage, sender_id:str) -> None:
@@ -744,7 +690,6 @@ class Agent(Loggable):
         output_keywords = self.output_connections.keywords if hasattr(self.output_connections, 'get_keyword') else []
         bg_messages = [message for message, is_unused in self.bg_message_cache]
         messages = Context.integrate(
-            self.prompt, 
             bg_messages, 
             self.input_message_cache,
             output_keywords
