@@ -178,6 +178,7 @@ class Agent(Loggable):
     - bg_message_cache: 背景消息缓存（非激活通道的消息）
     - input_message_cache: 输入消息缓存（激活通道的消息）
     - input_message_keyword: 激活通道列表（触发Agent激活的通道）
+    #要大改了
     """
     
     def __init__(self, id: str, prompt: str = "", message_bus: 'MessageBus' = None):
