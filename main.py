@@ -107,7 +107,7 @@ async def main():
         agent.auto_sync_enabled = not DEBUG_MODE
         
         system.register_agent(agent)
-        basic_logger.info(f"加载普通Agent: {agent.id}")
+        basic_logger.info(f"加载普通Agent: {agent.name}")
         
     basic_logger.info("加载普通Agent完成")
     basic_logger.info("开始加载系统Agent")

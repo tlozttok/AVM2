@@ -53,8 +53,8 @@ class AgentSystem(Loggable):
     
     def register_agent(self, agent: Agent):
         """注册Agent到系统"""
-        self.logger.info(f"注册Agent: {agent.id}")
-        self.agents[agent.id] = agent
+        self.logger.info(f"注册Agent: {agent.name}")
+        self.agents[agent.name] = agent
         agent.message_bus = self.message_bus
         self.message_bus.register_agent(agent)
     
@@ -219,7 +219,7 @@ class AgentSystem(Loggable):
             
             agent = self.agents[agent_id]
             agent_info = {
-                "id": agent.id,
+                "id": agent.name,
                 "has_prompt": bool(agent.prompt),
                 "prompt_length": len(agent.prompt) if agent.prompt else 0
             }
