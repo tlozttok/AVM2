@@ -54,6 +54,8 @@ class LoggerFactory:
         logger.info(f"{class_name} 日志初始化。")
         
         return logger
+    
+class LoggerWraper
 
 # 基础类，提供日志功能
 class Loggable:
@@ -63,6 +65,9 @@ class Loggable:
         # 获取类名（支持继承）
         class_name = self.__class__.__name__
         self.logger = LoggerFactory.get_logger(class_name)
+        
+    def set_log_name(self,name:str):
+        
         
         
 basic_logger = LoggerFactory.get_logger("basic")
