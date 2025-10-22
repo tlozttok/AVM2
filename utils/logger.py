@@ -55,7 +55,29 @@ class LoggerFactory:
         
         return logger
     
-class LoggerWraper
+class AgentLogger:
+    """Agent专用的日志包装器，自动包含Agent ID"""
+    
+    def __init__(self, agent_id, logger):
+        self.agent_id = agent_id
+        self.raw_logger = logger
+    
+    def debug(self, msg: str):
+        # 使用 stacklevel=2 来跳过包装器本身的调用栈
+        self.raw_logger.debug(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
+    
+    def info(self, msg: str):
+        self.raw_logger.info(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
+    
+    def warning(self, msg: str):
+        self.raw_logger.warning(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
+    
+    def error(self, msg: str):
+        self.raw_logger.error(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
+    
+    def critical(self, msg: str):
+        self.raw_logger.critical(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
+
 
 # 基础类，提供日志功能
 class Loggable:
@@ -67,7 +89,7 @@ class Loggable:
         self.logger = LoggerFactory.get_logger(class_name)
         
     def set_log_name(self,name:str):
+        self.logger=AgentLogger(name,self.logger)
         
-        
-        
+
 basic_logger = LoggerFactory.get_logger("basic")
