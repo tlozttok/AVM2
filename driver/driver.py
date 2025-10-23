@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from utils.logger import Loggable
 from utils.llm_logger import llm_logger
+from utils.frequency_calculator import ActivationFrequencyCalculator, FrequencyMonitor
 
 
 # Load environment variables
@@ -74,6 +75,7 @@ class AgentSystem(Loggable):
         self.message_bus = MessageBus()
         self.explore_agent=[]
         self.io_agents=[]
+        self.frequency_monitor = FrequencyMonitor()
         
         self.logger.info("AgentSystem 实例已创建")
         
@@ -154,6 +156,38 @@ class AgentSystem(Loggable):
         agent = random.choice(self.explore_agent)
         self.logger.info(f"为关键字 '{keyword}' 找到探索代理: {agent}")
         return agent
+    
+    def split_agent(self, state, connection):
+        new_agent=Agent()
+        new_agent.state=state
+        new_agent.input_connection=connection
+        self.add_agent(new_agent)
+    
+    def get_frequency_stats(self, agent_id: str = None) -> dict:
+        """
+        获取频率统计信息
+        
+        Args:
+            agent_id: 指定Agent ID，如果为None则返回所有Agent的统计
+            
+        Returns:
+            dict: 频率统计信息
+        """
+        if agent_id:
+            self.logger.debug(f"获取Agent {agent_id} 的频率统计")
+            agent = self.get_agent(agent_id)
+            if agent:
+                stats = agent.get_frequency_stats()
+            else:
+                stats = None
+        else:
+            self.logger.debug("获取所有Agent的频率统计")
+            stats = {}
+            for agent_id, agent in self.agents.items():
+                stats[agent_id] = agent.get_frequency_stats()
+        
+        self.logger.info(f"频率统计获取完成")
+        return stats
 
 
 class Agent(Loggable):
@@ -176,6 +210,13 @@ class Agent(Loggable):
         self.message_bus=None
         self.system=None
         self.pre_prompt=pre_prompt
+        
+        # 激活频率计算器
+        self.frequency_calculator = ActivationFrequencyCalculator(
+            window_size=10,
+            time_window_seconds=60.0,
+            agent_id=self.id
+        )
         
         self.set_log_name(str(self.id))
         
@@ -259,16 +300,41 @@ class Agent(Loggable):
         if not agent in [output[1] for output in self.output_connection]:
             self.output_connection.append((keyword,agent))
             self.logger.info(f"已建立输出连接到 {agent}")
+            
+    def split(self,state,keyword):
+        splited_connection=list(filter(lambda x:x[1] in keyword,self.input_connection))
+        self.input_connection=list(filter(lambda x:x[1] not in keyword,self.input_connection))
+        self.system.split_agent(state,splited_connection)
+    
+    def get_frequency_stats(self) -> dict:
+        """
+        获取Agent的频率统计信息
+        
+        Returns:
+            dict: 频率统计信息
+        """
+        return self.frequency_calculator.get_frequency_stats()
         
     async def activate(self):
         self.logger.info(f"激活Agent，处理 {len(self.input_cache)} 条输入缓存")
+        
+        # 记录激活频率
+        self.frequency_calculator.record_activation()
+        
+        # 获取频率统计信息
+        frequency_stats = self.frequency_calculator.get_frequency_stats()
+        
         output_count=Counter([x[0] for x in self.output_connection])
-        # 构建系统提示词
+        # 构建系统提示词（包含频率信息）
         system_prompt=self.pre_prompt+\
             "\n<self_state>"+self.state+"</self_state>"+\
             "\n<output_keywords>"+str(output_count)+"</output_keywords>"+\
             "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"+\
-            "\n<your_id>"+self.id+"</your_id>"
+            "\n<your_id>"+self.id+"</your_id>"+\
+            "\n<activation_frequency>"+\
+            f"瞬时频率: {frequency_stats['instant_frequency_hz']:.3f} Hz, "+\
+            f"移动平均: {frequency_stats['moving_average_frequency_hz']:.3f} Hz"+\
+            "</activation_frequency>"
         
         # 构建用户提示词
         user_prompt="\n".join([f"{input[0]} : {input[1]}" for input in self.input_cache])
@@ -372,6 +438,8 @@ class Agent(Loggable):
                         self.system.get_agent(signal["id"]).delete_output_connection(self.id)
                 if signal_type=="ACCEPT_INPUT":
                     self.set_input_connection(signal["id"],signal["keyword"])
+                if signal_type=="SPLIT":
+                    self.split(signal["state"],signal["keyword"])
         except Exception as e:
             self.logger.error(f"信号处理失败: {e}")
             self.logger.exception("信号处理异常详情:")
