@@ -6,9 +6,8 @@ import random
 import re
 import os
 import asyncio
-from typing import List, Tuple, Dict
+from typing import List, Optional, Tuple, Dict
 import uuid
-from uuid import UUID
 from abc import ABC, abstractmethod
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
@@ -35,7 +34,7 @@ class MessageBus(Loggable):
     
     def __init__(self):
         super().__init__()
-        self.agents: Dict[UUID, Agent] = {}
+        self.agents: Dict[str, Agent] = {}
         self.logger.info("MessageBus 实例已创建")
         
         
@@ -44,7 +43,7 @@ class MessageBus(Loggable):
         self.agents[agent.id] = agent
         self.logger.info(f"代理 {agent.id} 已注册到消息总线，当前注册代理数: {len(self.agents)}")
         
-    def unregister_agent(self, agent_id: UUID):
+    def unregister_agent(self, agent_id: str):
         self.logger.debug(f"从消息总线注销代理: {agent_id}")
         if agent_id in self.agents:
             del self.agents[agent_id]
@@ -52,14 +51,16 @@ class MessageBus(Loggable):
         else:
             self.logger.warning(f"尝试注销不存在的代理: {agent_id}")
             
-    async def send_message(self, message: str, receiver_id: UUID, sender_id: UUID):
+    def send_message(self, message: str, receiver_id: str, sender_id: str)->Optional[asyncio.Task]:
         self.logger.debug(f"发送消息: {sender_id} -> {receiver_id}, 长度: {len(message)} 字符")
         if receiver_id in self.agents:
             self.logger.debug(f"找到接收者 {receiver_id}，转发消息")
-            await self.agents[receiver_id].receive_message(message, sender_id)
+            task=self.agents[receiver_id].receive_message(message, sender_id)
             self.logger.info(f"消息已成功发送到 {receiver_id}")
         else:
             self.logger.error(f"接收者 {receiver_id} 未在消息总线中注册，消息发送失败")
+            task=None
+        return task
 
 
 class AgentSystem(Loggable):
@@ -67,7 +68,7 @@ class AgentSystem(Loggable):
     
     def __init__(self):
         super().__init__()
-        self.agents: Dict[UUID, Agent] = {}
+        self.agents: Dict[str, Agent] = {}
         self.message_bus = MessageBus()
         self.explore_agent=[]
         self.io_agents=[]
@@ -109,7 +110,7 @@ class AgentSystem(Loggable):
             await agent.stop()
         self.logger.info("所有输入代理已停止")
         
-    def remove_agent(self, agent_id: UUID):
+    def remove_agent(self, agent_id: str):
         self.logger.debug(f"尝试移除代理: {agent_id}")
         if agent_id in self.agents:
             self.message_bus.unregister_agent(agent_id)
@@ -122,7 +123,7 @@ class AgentSystem(Loggable):
             self.io_agents.remove(agent_id)
             self.logger.debug(f"代理 {agent_id} 已从IO代理列表中移除")
             
-    def get_agent(self, agent_id: UUID):
+    def get_agent(self, agent_id: str):
         agent = self.agents.get(agent_id)
         if agent:
             self.logger.debug(f"获取代理 {agent_id} 成功")
@@ -130,12 +131,12 @@ class AgentSystem(Loggable):
             self.logger.warning(f"获取代理 {agent_id} 失败，代理不存在")
         return agent
     
-    def add_explore_agent(self, agent:UUID):
+    def add_explore_agent(self, agent:str):
         self.logger.debug(f"添加探索代理: {agent}")
         self.explore_agent.append(agent)
         self.logger.info(f"代理 {agent} 已添加到探索列表，当前探索代理数: {len(self.explore_agent)}")
 
-    def stop_explore_agent(self, agent:UUID):
+    def stop_explore_agent(self, agent:str):
         self.logger.debug(f"停止探索代理: {agent}")
         if agent in self.explore_agent:
             self.explore_agent.remove(agent)
@@ -165,10 +166,10 @@ class Agent(Loggable):
         if type(self) != Agent:
             raise TypeError("Agent类不可继承，请通过输入和LLM配置Agent行为")
             
-        self.id:UUID=str(uuid.uuid4())
+        self.id:str=str(uuid.uuid4())
         self.state:str=""
-        self.input_connection:List[Tuple[UUID, str]]=[]
-        self.output_connection:List[Tuple[str, UUID]]=[]
+        self.input_connection:List[Tuple[str, str]]=[]
+        self.output_connection:List[Tuple[str, str]]=[]
         self.input_cache:List[Tuple[str,str]]=[]
         self.message_bus=None
         self.system=None
@@ -179,22 +180,24 @@ class Agent(Loggable):
         self.logger.info(f"Agent实例已创建，ID: {self.id}")
         
         
-    async def receive_message(self, message:str, sender:UUID):
+    def receive_message(self, message:str, sender:str)->Optional[asyncio.Task]:
         self.logger.debug(f"收到来自 {sender} 的消息: {message}")
-        keyword=list(filter(lambda x:x[0]==str(sender), self.input_connection))
+        keyword=list(filter(lambda x:x[0]==sender, self.input_connection))
         if keyword:
             keyword=keyword[0][1]
             self.logger.debug(f"找到对应关键字: '{keyword}'")
         else:
-            keyword=str(sender)
+            keyword=sender
             self.logger.warning(f"未找到发送者 {sender} 的输入连接，使用发送者ID作为关键字")
         self.input_cache.append((keyword, message))
         self.logger.debug(f"输入缓存大小: {len(self.input_cache)}")
         if self.should_activate():
             self.logger.debug("满足激活条件，开始激活")
-            await self.activate()
+            task=asyncio.create_task(self.activate())
+            return task
         else:
             self.logger.debug("不满足激活条件，等待更多输入")
+            return None
             
     def should_activate(self):
         should_activate = len(self.input_cache) > 0
@@ -228,14 +231,14 @@ class Agent(Loggable):
             self.logger.debug(f"通知发送者 {id} 删除输出连接")
             self.system.get_agent(id).delete_output_connection(self.id)
         
-    def delete_output_connection(self, id:UUID):
+    def delete_output_connection(self, id:str):
         self.logger.debug(f"删除输出连接: 接收者 {id}")
         before_count = len(self.output_connection)
         self.output_connection=list(filter(lambda x:x[1]!=id, self.output_connection))
         after_count = len(self.output_connection)
         self.logger.info(f"输出连接已删除，连接数: {before_count} -> {after_count}")
         
-    def set_input_connection(self, id:UUID, keyword:str):
+    def set_input_connection(self, id:str, keyword:str):
         self.logger.debug(f"设置输入连接: 发送者 {id}, 关键字 '{keyword}'")
         self.input_connection.append((id, keyword))
         self.logger.info(f"输入连接已添加，当前输入连接数: {len(self.input_connection)}")
@@ -260,7 +263,8 @@ class Agent(Loggable):
         # 构建系统提示词
         system_prompt=self.pre_prompt+\
             "\n<self_state>"+self.state+"</self_state>"+\
-            "\n<output_keywords>"+str(output_count)+"</output_keywords>"
+            "\n<output_keywords>"+str(output_count)+"</output_keywords>"+\
+            "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"
         
         # 构建用户提示词
         user_prompt="\n".join([f"{input[0]} : {input[1]}" for input in self.input_cache])
@@ -273,6 +277,8 @@ class Agent(Loggable):
         
         try:
             self.logger.info(f"调用LLM API，模型: {MODEL_NAME}")
+            self.input_cache=[]
+            self.logger.debug("输入缓存已清空")
             response = await openai_client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=message,
@@ -283,9 +289,6 @@ class Agent(Loggable):
             self.logger.info(f"LLM响应长度: {len(response_content)} 字符")
             self.logger.debug(f"LLM响应内容: {response_content}")
             
-            # 如果成功，清空输入缓存
-            self.input_cache=[]
-            self.logger.debug("输入缓存已清空")
             
             await self.process_response(response_content)
         except Exception as e:
@@ -304,6 +307,8 @@ class Agent(Loggable):
         signal_processing = 0
         message_sending = 0
         
+        task_list=[]
+        
         for keyword, content in matches:
             self.logger.debug(f"处理标签 '{keyword}': {content[:50]}...")
             if keyword == "self_state":
@@ -317,36 +322,41 @@ class Agent(Loggable):
             else:
                 message_sending += 1
                 self.logger.debug(f"发送消息到关键字 '{keyword}'，内容长度: {len(content)} 字符")
-                await self.send_message(content,keyword)
+                task=self.send_message(content,keyword)
+                if task:
+                    task_list.append(task)
+                
+        for  task in task_list:
+            asyncio.ensure_future(task)
         
         self.logger.info(f"响应处理完成: 状态更新 {state_updates} 次，处理信号 {signal_processing} 个，发送消息 {message_sending} 条")
                 
     async def process_signal(self, signals):
         self.logger.info(f"处理信号: {signals}")
         try:
-            signals=json.loads(signals)
+            signals_data = json.loads(signals)
+            self.logger.debug(f"解析到 {len(signals_data)} 个信号")
+            signals_data=signals_data["content"]
+            for signal in signals_data:
+                signal_type=signal["type"]
+                self.logger.info(f"执行信号: {signal_type}")
+                if signal_type=="EXPLORE":
+                    self.explore()
+                if signal_type=="STOP_EXPLORE":
+                    self.stop_explore()
+                if signal_type=="SEEK":
+                    self.seek(signal["keyword"])
+                if signal_type=="REJECT_INPUT":
+                    if signal.get("keyword"):
+                        self.delete_input_connection(signal["keyword"])
+                    if signal.get("id"):
+                        self.logger.debug(f"通知发送者 {signal['id']} 删除输出连接")
+                        self.system.get_agent(signal["id"]).delete_output_connection(self.id)
+                if signal_type=="ACCEPT_INPUT":
+                    self.set_input_connection(signal["id"],signal["keyword"])
         except Exception as e:
-            self.logger.warning(f"信号解析失败: {signals}")
-            raise  e
-        signals=signals["content"]
-        self.logger.debug(f"解析到 {len(signals)} 个信号")
-        for signal in signals:
-            signal_type=signal["type"]
-            self.logger.info(f"执行信号: {signal_type}")
-            if signal_type=="EXPLORE":
-                self.explore()
-            if signal_type=="STOP_EXPLORE":
-                self.stop_explore()
-            if signal_type=="SEEK":
-                self.seek(signal["keyword"])
-            if signal_type=="REJECT_INPUT":
-                if signal.get("keyword"):
-                    self.delete_input_connection(signal["keyword"])
-                if signal.get("id"):
-                    self.logger.debug(f"通知发送者 {signal["id"]} 删除输出连接")
-                    self.system.get_agent(signal["id"]).delete_output_connection(self.id)
-            if signal_type=="ACCEPT_INPUT":
-                self.set_input_connection(signal["id"],signal["keyword"])
+            self.logger.error(f"信号处理失败: {e}")
+            self.logger.exception("信号处理异常详情:")
 
 
 class OutputAgent(Loggable, ABC):
@@ -354,8 +364,8 @@ class OutputAgent(Loggable, ABC):
     
     def __init__(self):
         super().__init__()
-        self.id: UUID = uuid.uuid4()
-        self.input_connections:List[UUID]=[]
+        self.id: str = str(uuid.uuid4())
+        self.input_connections:List[str]=[]
         self.message_bus = None
         self.system = None
         
@@ -369,7 +379,7 @@ class OutputAgent(Loggable, ABC):
         
         pass
     
-    async def receive_message(self, message: str, sender: UUID):
+    async def receive_message(self, message: str, sender: str):
         self.logger.debug(f"收到来自 {sender} 的消息: {message}")
         # 执行其他Agent送来的数据
         if sender in  self.input_connections:
@@ -391,9 +401,9 @@ class InputAgent(Loggable, ABC):
     
     def __init__(self):
         super().__init__()
-        self.id: UUID = uuid.uuid4()
+        self.id: str = str(uuid.uuid4())
         self.message_bus = None
-        self.output_connections:List[UUID] = []
+        self.output_connections:List[str] = []
         self.system = None
         self._running = False
         self._task = None
