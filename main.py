@@ -60,7 +60,7 @@ async def main():
     logger.debug(f"AgentB -> ConsoleOutputAgent ({console_output.id})")
     agent_b.output_connection.append(("reflected_to_input", agent_a.id))
     logger.debug(f"AgentB -> AgentA ({agent_a.id})")
-    console_output.input_connections.append(("input", agent_b.id))
+    console_output.input_connections.append(agent_b.id)
     logger.info("代理连接已建立: Input -> AgentA -> AgentB -> Output")
     
     # 启动系统

@@ -75,6 +75,9 @@ class AgentLogger:
     def error(self, msg: str):
         self.raw_logger.error(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
     
+    def exception(self, msg: str):
+        self.raw_logger.exception(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
+    
     def critical(self, msg: str):
         self.raw_logger.critical(f"[Agent:{self.agent_id}] {msg}", stacklevel=2)
 
