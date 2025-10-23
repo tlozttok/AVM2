@@ -6,12 +6,14 @@ import random
 import re
 import os
 import asyncio
+import time
 from typing import List, Optional, Tuple, Dict
 import uuid
 from abc import ABC, abstractmethod
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from utils.logger import Loggable
+from utils.llm_logger import llm_logger
 
 
 # Load environment variables
@@ -254,8 +256,9 @@ class Agent(Loggable):
     def seek(self,keyword):
         self.logger.info(f"寻找关键字 '{keyword}' 的Agent")
         agent=self.system.seek_agent(keyword)
-        self.output_connection.append((keyword,agent))
-        self.logger.info(f"已建立输出连接到 {agent}")
+        if not agent in [output[1] for output in self.output_connection]:
+            self.output_connection.append((keyword,agent))
+            self.logger.info(f"已建立输出连接到 {agent}")
         
     async def activate(self):
         self.logger.info(f"激活Agent，处理 {len(self.input_cache)} 条输入缓存")
@@ -264,7 +267,8 @@ class Agent(Loggable):
         system_prompt=self.pre_prompt+\
             "\n<self_state>"+self.state+"</self_state>"+\
             "\n<output_keywords>"+str(output_count)+"</output_keywords>"+\
-            "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"
+            "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"+\
+            "\n<your_id>"+self.id+"</your_id>"
         
         # 构建用户提示词
         user_prompt="\n".join([f"{input[0]} : {input[1]}" for input in self.input_cache])
@@ -277,18 +281,32 @@ class Agent(Loggable):
         
         try:
             self.logger.info(f"调用LLM API，模型: {MODEL_NAME}")
-            self.input_cache=[]
-            self.logger.debug("输入缓存已清空")
+            start_time = time.time()
             response = await openai_client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=message,
                 temperature=0.7
             )
+            response_time = time.time() - start_time
             response_content = response.choices[0].message.content
             
-            self.logger.info(f"LLM响应长度: {len(response_content)} 字符")
+            # 记录LLM调用到专用日志
+            tokens_used = response.usage.total_tokens if hasattr(response, 'usage') and response.usage else None
+            llm_logger.log_llm_call(
+                agent_id=self.id,
+                model=MODEL_NAME,
+                system_prompt=system_prompt.replace(pre_prompt,"[PRE_PROMPT]"),
+                user_prompt=user_prompt,
+                output=response_content,
+                response_time=response_time,
+                tokens_used=tokens_used
+            )
+            
+            self.logger.info(f"LLM响应长度: {len(response_content)} 字符，响应时间: {response_time:.2f}秒")
             self.logger.debug(f"LLM响应内容: {response_content}")
             
+            self.input_cache=[]
+            self.logger.debug("输入缓存已清空")
             
             await self.process_response(response_content)
         except Exception as e:
@@ -299,7 +317,7 @@ class Agent(Loggable):
         
     async def process_response(self, response):
         self.logger.info(f"处理LLM响应")
-        pattern = re.compile(r"<(\w+)>(.*?)</\1>")
+        pattern = re.compile(r"<(\w+)>(.*?)</\1>", re.DOTALL)
         matches = pattern.findall(response)
         self.logger.info(f"找到 {len(matches)} 个标签匹配")
         
@@ -383,6 +401,13 @@ class OutputAgent(Loggable, ABC):
         self.logger.debug(f"收到来自 {sender} 的消息: {message}")
         # 执行其他Agent送来的数据
         if sender in  self.input_connections:
+            # 记录OutputAgent消息到专用日志
+            llm_logger.log_output_agent_message(
+                agent_id=self.id,
+                message=message,
+                sender_id=sender
+            )
+            
             self.logger.debug(f"发送者 {sender} 在输入连接列表中，执行探索和数据输出")
             self.explore(message)
             await self.execute_data(message)
@@ -494,6 +519,13 @@ class InputAgent(Loggable, ABC):
         if not self.output_connections:
             self.logger.warning("无输出连接，数据无法发送")
             return
+            
+        # 记录InputAgent消息到专用日志
+        llm_logger.log_input_agent_message(
+            agent_id=self.id,
+            message=data,
+            receiver_ids=self.output_connections
+        )
             
         self.logger.info(f"向 {len(self.output_connections)} 个输出连接发送数据")
         for receiver_id in self.output_connections:
