@@ -76,6 +76,7 @@ class AgentSystem(Loggable):
         self.explore_agent=[]
         self.io_agents=[]
         self.frequency_monitor = FrequencyMonitor()
+        self.logger.debug("频率监控器已创建")
         
         self.logger.info("AgentSystem 实例已创建")
         
@@ -86,6 +87,11 @@ class AgentSystem(Loggable):
         self.message_bus.register_agent(agent)
         agent.message_bus = self.message_bus
         agent.system = self
+        
+        # 在频率监控器中注册Agent
+        self.frequency_monitor.register_agent(agent.id)
+        # 减少日志记录，只在调试模式下记录详细频率信息
+        
         self.logger.info(f"代理 {agent.id} 已添加到系统")
     
     def add_io_agent(self, agent):
@@ -119,6 +125,11 @@ class AgentSystem(Loggable):
         if agent_id in self.agents:
             self.message_bus.unregister_agent(agent_id)
             del self.agents[agent_id]
+            
+            # 清理频率监控器中的记录
+            self.frequency_monitor.unregister_agent(agent_id)
+            # 减少日志记录，只在调试模式下记录详细频率信息
+            
             self.logger.info(f"代理 {agent_id} 已从系统中移除")
         else:
             self.logger.warning(f"尝试移除不存在的代理: {agent_id}")
@@ -158,10 +169,12 @@ class AgentSystem(Loggable):
         return agent
     
     def split_agent(self, state, connection):
+        self.logger.info(f"系统级别Agent分裂，状态: {state}, 连接数: {len(connection)}")
         new_agent=Agent()
         new_agent.state=state
         new_agent.input_connection=connection
         self.add_agent(new_agent)
+        self.logger.info(f"新Agent {new_agent.id} 已创建并添加到系统")
     
     def get_frequency_stats(self, agent_id: str = None) -> dict:
         """
@@ -178,15 +191,17 @@ class AgentSystem(Loggable):
             agent = self.get_agent(agent_id)
             if agent:
                 stats = agent.get_frequency_stats()
+                self.logger.debug(f"Agent {agent_id} 频率统计获取完成")
             else:
+                self.logger.warning(f"Agent {agent_id} 不存在，无法获取频率统计")
                 stats = None
         else:
             self.logger.debug("获取所有Agent的频率统计")
             stats = {}
             for agent_id, agent in self.agents.items():
                 stats[agent_id] = agent.get_frequency_stats()
+            self.logger.debug(f"所有 {len(stats)} 个Agent的频率统计获取完成")
         
-        self.logger.info(f"频率统计获取完成")
         return stats
 
 
@@ -217,6 +232,11 @@ class Agent(Loggable):
             time_window_seconds=60.0,
             agent_id=self.id
         )
+        self.logger.debug(f"激活频率计算器已创建 - 窗口大小: 10, 时间窗口: 60.0秒")
+        
+        # keyword消息接收频率跟踪器
+        self.keyword_frequency_trackers: Dict[str, ActivationFrequencyCalculator] = {}
+        self.logger.debug("keyword消息接收频率跟踪器已初始化")
         
         self.set_log_name(str(self.id))
         
@@ -229,6 +249,19 @@ class Agent(Loggable):
         if keyword:
             keyword=keyword[0][1]
             self.logger.debug(f"找到对应关键字: '{keyword}'")
+            
+            # 记录keyword消息接收频率
+            if keyword not in self.keyword_frequency_trackers:
+                self.keyword_frequency_trackers[keyword] = ActivationFrequencyCalculator(
+                    window_size=10,
+                    time_window_seconds=60.0,
+                    agent_id=f"{self.id}.keyword.{keyword}"
+                )
+                self.logger.debug(f"为关键字 '{keyword}' 创建消息接收频率跟踪器")
+            
+            self.keyword_frequency_trackers[keyword].record_activation()
+            # 减少日志记录，只在调试模式下记录详细频率信息
+            
         else:
             keyword=sender
             self.logger.warning(f"未找到发送者 {sender} 的输入连接，使用发送者ID作为关键字")
@@ -286,9 +319,7 @@ class Agent(Loggable):
         self.input_connection.append((id, keyword))
         self.logger.info(f"输入连接已添加，当前输入连接数: {len(self.input_connection)}")
     
-    def explore(self):
-        self.logger.info(f"开始探索模式，允许其他Agent发现")
-        self.system.add_explore_agent(self.id)
+
         
     def stop_explore(self):
         self.logger.info(f"停止探索模式")
@@ -302,9 +333,13 @@ class Agent(Loggable):
             self.logger.info(f"已建立输出连接到 {agent}")
             
     def split(self,state,keyword):
+        self.logger.info(f"执行Agent分裂，状态: {state}, 关键字: {keyword}")
         splited_connection=list(filter(lambda x:x[1] in keyword,self.input_connection))
+        self.logger.debug(f"找到 {len(splited_connection)} 个需要分裂的连接")
         self.input_connection=list(filter(lambda x:x[1] not in keyword,self.input_connection))
+        self.logger.debug(f"分裂后剩余 {len(self.input_connection)} 个输入连接")
         self.system.split_agent(state,splited_connection)
+        self.logger.info("Agent分裂操作完成")
     
     def get_frequency_stats(self) -> dict:
         """
@@ -313,16 +348,47 @@ class Agent(Loggable):
         Returns:
             dict: 频率统计信息
         """
-        return self.frequency_calculator.get_frequency_stats()
+        self.logger.debug("获取Agent频率统计信息")
+        stats = self.frequency_calculator.get_frequency_stats()
+        # 减少日志记录，只在调试模式下记录详细频率信息
+        return stats
+    
+    
+    def get_keyword_message_frequencies(self) -> dict:
+        """
+        获取各个keyword消息接收频率
+        
+        Returns:
+            dict: {keyword: frequency_stats} 的字典
+        """
+        # 减少日志记录，只在调试模式下记录详细频率信息
+        keyword_frequencies = {}
+        
+        for keyword, tracker in self.keyword_frequency_trackers.items():
+            frequency_stats = tracker.get_frequency_stats()
+            keyword_frequencies[keyword] = {
+                'instant_frequency_hz': frequency_stats['instant_frequency_hz'],
+                'moving_average_frequency_hz': frequency_stats['moving_average_frequency_hz'],
+                'total_messages': frequency_stats['total_activations']
+            }
+            # 减少日志记录，只在调试模式下记录详细频率信息
+        
+        self.logger.debug(f"获取到 {len(keyword_frequencies)} 个keyword的消息接收频率信息")
+        return keyword_frequencies
         
     async def activate(self):
         self.logger.info(f"激活Agent，处理 {len(self.input_cache)} 条输入缓存")
         
         # 记录激活频率
         self.frequency_calculator.record_activation()
+        # 减少日志记录，只在调试模式下记录详细频率信息
         
         # 获取频率统计信息
         frequency_stats = self.frequency_calculator.get_frequency_stats()
+        # 减少日志记录，只在调试模式下记录详细频率信息
+        
+        # 获取keyword消息接收频率
+        keyword_frequencies = self.get_keyword_message_frequencies()
         
         output_count=Counter([x[0] for x in self.output_connection])
         # 构建系统提示词（包含频率信息）
@@ -334,7 +400,12 @@ class Agent(Loggable):
             "\n<activation_frequency>"+\
             f"瞬时频率: {frequency_stats['instant_frequency_hz']:.3f} Hz, "+\
             f"移动平均: {frequency_stats['moving_average_frequency_hz']:.3f} Hz"+\
-            "</activation_frequency>"
+            "</activation_frequency>"+\
+            "\n<keyword_message_frequencies>"+\
+            str(keyword_frequencies)+\
+            "</keyword_message_frequencies>"
+        
+        self.logger.info("系统提示词已构建，包含激活频率信息")
         
         # 构建用户提示词
         user_prompt="\n".join([f"{input[0]} : {input[1]}" for input in self.input_cache])
@@ -439,6 +510,7 @@ class Agent(Loggable):
                 if signal_type=="ACCEPT_INPUT":
                     self.set_input_connection(signal["id"],signal["keyword"])
                 if signal_type=="SPLIT":
+                    self.logger.info(f"执行SPLIT信号，状态: {signal['state']}, 关键字: {signal['keyword']}")
                     self.split(signal["state"],signal["keyword"])
         except Exception as e:
             self.logger.error(f"信号处理失败: {e}")

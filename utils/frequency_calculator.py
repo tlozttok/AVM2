@@ -46,10 +46,10 @@ class ActivationFrequencyCalculator:
         
         # 日志器
         self.logger = LoggerFactory.get_logger(
-            f"frequency_calculator.{agent_id if agent_id else 'global'}"
+            f"frequency_calculator"
         )
         
-        self.logger.info(
+        self.logger.debug(
             f"激活频率计算器已创建 - 窗口大小: {window_size}, "
             f"时间窗口: {time_window_seconds}秒"
         )
@@ -69,11 +69,7 @@ class ActivationFrequencyCalculator:
         self._calculate_instant_frequency()
         self._calculate_moving_average_frequency()
         
-        self.logger.debug(
-            f"激活记录 - 瞬时频率: {self.instant_frequency:.3f} Hz, "
-            f"移动平均: {self.moving_average_frequency:.3f} Hz, "
-            f"总激活: {self.total_activations}"
-        )
+        # 减少日志记录，只在调试模式下记录详细频率信息
     
     def _clean_old_activations(self, current_time: float) -> None:
         """
@@ -163,7 +159,7 @@ class ActivationFrequencyCalculator:
         self.moving_average_frequency = 0.0
         self.total_activations = 0
         
-        self.logger.info("频率计算器已重置")
+        self.logger.debug("频率计算器已重置")
     
     def __str__(self) -> str:
         """字符串表示"""
@@ -185,7 +181,7 @@ class FrequencyMonitor:
         self.frequency_calculators: dict = {}
         self.logger = LoggerFactory.get_logger("frequency_monitor")
         
-        self.logger.info("频率监控器已创建")
+        self.logger.debug("频率监控器已创建")
     
     def register_agent(self, 
                       agent_id: str, 
@@ -213,7 +209,7 @@ class FrequencyMonitor:
         )
         self.frequency_calculators[agent_id] = calculator
         
-        self.logger.info(f"Agent {agent_id} 已注册频率计算器")
+        self.logger.debug(f"Agent {agent_id} 已注册频率计算器")
         return calculator
     
     def record_activation(self, agent_id: str) -> None:
@@ -268,7 +264,7 @@ class FrequencyMonitor:
         """
         if agent_id in self.frequency_calculators:
             del self.frequency_calculators[agent_id]
-            self.logger.info(f"Agent {agent_id} 的频率计算器已注销")
+            self.logger.debug(f"Agent {agent_id} 的频率计算器已注销")
         else:
             self.logger.warning(f"尝试注销未注册的Agent: {agent_id}")
     
@@ -276,4 +272,4 @@ class FrequencyMonitor:
         """重置所有频率计算器"""
         for calculator in self.frequency_calculators.values():
             calculator.reset()
-        self.logger.info("所有频率计算器已重置")
+        self.logger.debug("所有频率计算器已重置")
