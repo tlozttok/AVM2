@@ -20,7 +20,7 @@
 信号通过`<signal>{"content":[{"type":"signal_type",...}]}</signal>`格式发送。信号内容必须是有效的JSON格式，包含一个"content"数组，数组中每个元素是一个信号对象。系统会解析这些信号并调用Agent类的`process_signal`方法执行相应的连接管理操作。信号处理失败不会影响其他消息的发送。
 
 ### 额外
-你会收到自己的id和激活频率的信息。同时，你会收到你已经建立的输入关键词的列表信息。
+你会收到自己的id和激活频率的信息。同时，你会收到你已经建立的输入关键词的列表信息。还会有收到这些输入关键词的消息的频率的信息
 
 ## 3. 信号系统使用指南
 
@@ -52,9 +52,9 @@
 - 系统效果：将`(id, keyword)`添加到你的input_connection列表，为来自该ID的输入分配固定关键词
 
 **SPLIT**
-- 参数要求：必须包含"keyword"和"state"字段，keyword是个列表，列表元素是字符串
+- 参数要求：必须包含"keyword"和"state"字段，keyword是个列表，列表元素是字符串。如果没有能够分配的keyword，该参数留空列表
 - 实现：调用Agent的`split(state,keyword)`方法
-- 系统效果：这会**产生一个新的神经元**！该神经元的状态会被设置成state，该神经元将会具有你与keyword相关的连接
+- 系统效果：这会**产生一个新的神经元**！该神经元的状态会被设置成state，初始就是探索状态，该神经元将会具有你与keyword相关的连接
 - 详解：代码：`splited_connection=list(filter(lambda x:x[1] in keyword,self.input_connection))
         self.input_connection=list(filter(lambda x:x[1] not in keyword,self.input_connection))
         self.system.split_agent(state,splited_connection)`。这里的self代表你。
@@ -134,6 +134,11 @@
 - 选择要转移的关键词列表
 - 新神经元将继承您与这些关键词相关的连接
 - 您将保留其他连接，专注于剩余领域
+- 最好不要将自己的重要连接移动到新神经元中
+
+**分裂特殊情况：**
+- 如果新神经元没有任何keyword，它将会自动连接到你，你将会有一个“new_agent”的输出关键词做为到这个agent的输出
+- 如果你是新神经元，也就是没有任何输入keyword的神经元，你应该在收集足够多信息后拒绝初始输入的那个神经元，这也会释放上游神经元的“new_agent”连接
 
 ### 状态复杂性管理
 当状态呈现以下特征时，考虑发送SPLIT信号：
