@@ -8,6 +8,7 @@ import asyncio
 import subprocess
 import os
 import sys
+import threading
 from typing import Optional, List, Tuple
 import uuid
 from driver.driver import InputAgent, OutputAgent
@@ -120,10 +121,12 @@ class DfrotzManager:
             try:
                 text_input = await self._input_queue.get()
                 if text_input:
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, 
-                        lambda: self.process.stdin.write(text_input + '\n') and self.process.stdin.flush()
-                    )
+                    #await asyncio.get_event_loop().run_in_executor(
+                    #    None, 
+                    #    lambda: self.process.stdin.write(text_input + '\n') and self.process.stdin.flush()
+                    #)
+                    self.process.stdin.write(text_input + '\n')
+                    self.process.stdin.flush()
             except Exception as e:
                 print(f"向dfrotz写入输入时出错: {e}")
                 break
@@ -278,6 +281,16 @@ class DfrotzInputAgent(InputAgent):
     async def _monitor_output(self):
         """监控dfrotz输出并发送给连接的Agent"""
         while self._running:
+             # === 诊断信息：记录当前事件循环和线程 ===
+            current_loop = asyncio.get_running_loop()
+            current_thread = threading.current_thread()
+            self.logger.info(
+            f"[诊断] _monitor_output 启动 - "
+            f"事件循环ID: {id(current_loop)}, "
+            f"线程ID: {current_thread.ident}, "
+            f"线程名: {current_thread.name}"
+            )
+            # ======================================
             try:
                 # 获取dfrotz输出
                 output = await self.dfrotz_manager.get_output()

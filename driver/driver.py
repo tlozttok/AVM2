@@ -612,11 +612,12 @@ class InputAgent(Loggable, ABC):
                     self.logger.debug(f"第 {loop_count} 次循环: 有数据需要发送")
                     await self.send_collected_data()
                 else:
-                    self.logger.debug(f"第 {loop_count} 次循环: 无数据需要发送")
+                    #self.logger.debug(f"第 {loop_count} 次循环: 无数据需要发送")
+                    ...
                 
                 # 等待一段时间再检查
                 interval = self.get_check_interval()
-                self.logger.debug(f"等待 {interval} 秒后再次检查")
+                #self.logger.debug(f"等待 {interval} 秒后再次检查")
                 await asyncio.sleep(interval)
                 
             except asyncio.CancelledError:
@@ -634,10 +635,10 @@ class InputAgent(Loggable, ABC):
     def should_send_data(self) -> bool:
         """检测是否应该发送数据"""
         should_send = self.has_data_to_send()
-        if should_send:
-            self.logger.debug("检测到有数据需要发送")
-        else:
-            self.logger.debug("检测到无数据需要发送")
+        #if should_send:
+            #self.logger.debug("检测到有数据需要发送")
+        #else:
+            #self.logger.debug("检测到无数据需要发送")
         return should_send
         
     @abstractmethod
