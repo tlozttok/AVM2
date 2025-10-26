@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 主程序文件
-连接模式: Input-AgentA-AgentB-Output
+连接模式: UserInput -> Agent -> DfrotzOutput -> DfrotzInput -> ConsoleOutput
 """
 
 import asyncio
@@ -11,11 +11,8 @@ import os
 # 添加当前目录到 Python 路径
 from driver.driver import AgentSystem, Agent
 from driver.simple_io_agent import UserInputAgent, ConsoleOutputAgent
+from game_env.environment import DfrotzInputAgent, DfrotzOutputAgent
 from utils.logger import LoggerFactory
-
-
-# AgentA和AgentB现在直接使用Agent实例
-# 它们的行为完全由输入和LLM决定，不通过继承扩展
 
 
 async def main():
@@ -24,49 +21,64 @@ async def main():
     logger = LoggerFactory.get_logger("main")
     
     logger.info("启动 AVM2 系统...")
-    logger.info("连接模式: Input-AgentA-AgentB-Output")
+    logger.info("连接模式: UserInput -> Agent -> DfrotzOutput -> DfrotzInput -> ConsoleOutput")
     
     # 创建系统
     logger.debug("创建 AgentSystem 实例")
     system = AgentSystem()
     logger.info("AgentSystem 实例已创建")
     
-    # 创建代理
-    logger.debug("创建 UserInputAgent 实例")
-    user_input = UserInputAgent("用户输入: ")
-    logger.debug("创建 AgentA 实例")
-    agent_a = Agent()  # 直接使用Agent实例
-    logger.debug("创建 AgentB 实例")
-    agent_b = Agent()  # 直接使用Agent实例
-    logger.debug("创建 ConsoleOutputAgent 实例")
-    console_output = ConsoleOutputAgent("[系统输出]")
-    logger.info(f"代理创建完成: UserInputAgent({user_input.id}), AgentA({agent_a.id}), AgentB({agent_b.id}), ConsoleOutputAgent({console_output.id})")
+    
+    logger.debug("创建 Agent 实例")
+    agent = Agent()  # 只创建一个Agent
+    
+    
+    # 创建dfrotz代理
+    logger.debug("创建 DfrotzOutputAgent 实例")
+    game_file = "game_env/dfrotz/905.z5"
+    dfrotz_path = "game_env/dfrotz/dfrotz.exe"
+    dfrotz_output = DfrotzOutputAgent(game_file, dfrotz_path)
+    
+    logger.debug("创建 DfrotzInputAgent 实例")
+    # DfrotzInputAgent需要共享同一个dfrotz管理器
+    from game_env.environment import DfrotzManager
+    #dfrotz_manager = DfrotzManager(game_file, dfrotz_path)
+    dfrotz_input = DfrotzInputAgent(dfrotz_output.dfrotz_manager)
+    
+    logger.info(f"代理创建完成: Agent({agent.id}), DfrotzOutputAgent({dfrotz_output.id}), DfrotzInputAgent({dfrotz_input.id})")
     
     # 添加代理到系统
     logger.debug("开始添加代理到系统")
-    system.add_io_agent(user_input)
-    system.add_agent(agent_a)
-    system.add_agent(agent_b)
-    system.add_io_agent(console_output)
+    system.add_agent(agent)
+    system.add_io_agent(dfrotz_output)
+    system.add_io_agent(dfrotz_input)
     logger.info("所有代理已添加到系统")
     
-    # 建立连接: Input -> AgentA -> AgentB -> Output
     logger.debug("建立代理连接关系")
-    user_input.output_connections.append(agent_a.id)
-    logger.debug(f"UserInputAgent -> AgentA ({agent_a.id})")
-    agent_a.output_connection.append(("output", agent_b.id))
-    logger.debug(f"AgentA -> AgentB ({agent_b.id})")
-    agent_b.output_connection.append(("output_to_console", console_output.id))
-    logger.debug(f"AgentB -> ConsoleOutputAgent ({console_output.id})")
-    agent_b.output_connection.append(("reflected_to_input", agent_a.id))
-    logger.debug(f"AgentB -> AgentA ({agent_a.id})")
-    console_output.input_connections.append(agent_b.id)
-    logger.info("代理连接已建立: Input -> AgentA -> AgentB -> Output")
+    
+    
+    # Agent -> DfrotzOutput
+    agent.output_connection.append(("dfrotz_command", dfrotz_output.id))
+    logger.debug(f"Agent -> DfrotzOutputAgent ({dfrotz_output.id})")
+    
+    dfrotz_output.input_connections.append(agent.id)
+    
+    # DfrotzInput -> Agent (将游戏输出反馈给Agent)
+    dfrotz_input.output_connections.append(agent.id)
+    logger.debug(f"DfrotzInputAgent -> Agent ({agent.id})")
+    agent.input_connection.append(("dfrotz_output", dfrotz_input.id))
+    
+    logger.info("代理连接已建立")
     
     # 启动系统
     logger.info("启动所有输入代理")
     await system.start_all_input_agents()
-    logger.info("所有输入代理已启动")
+    
+    # 启动dfrotz输出代理（它不是InputAgent，需要手动启动）
+    logger.info("启动DfrotzOutputAgent")
+    await dfrotz_output.start()
+    
+    logger.info("所有代理已启动")
     
     try:
         logger.info("系统已启动，等待用户输入...")
@@ -89,7 +101,12 @@ async def main():
         # 停止系统
         logger.info("开始停止系统...")
         await system.stop_all_input_agents()
-        logger.info("所有输入代理已停止")
+        
+        # 停止dfrotz输出代理
+        logger.info("停止DfrotzOutputAgent")
+        await dfrotz_output.stop()
+        
+        logger.info("所有代理已停止")
         logger.info("系统已完全停止")
         print("系统已停止")
 
