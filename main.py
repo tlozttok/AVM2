@@ -16,6 +16,7 @@ from utils.logger import LoggerFactory
 
 
 async def main():
+    #asyncio.get_event_loop().set_debug(True)
     """主异步函数"""
     # 获取主程序日志器
     logger = LoggerFactory.get_logger("main")
@@ -66,7 +67,7 @@ async def main():
     # DfrotzInput -> Agent (将游戏输出反馈给Agent)
     dfrotz_input.output_connections.append(agent.id)
     logger.debug(f"DfrotzInputAgent -> Agent ({agent.id})")
-    agent.input_connection.append(("dfrotz_output", dfrotz_input.id))
+    agent.input_connection.append((dfrotz_input.id,"dfrotz_output"))
     
     logger.info("代理连接已建立")
     

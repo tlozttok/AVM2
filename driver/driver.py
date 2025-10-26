@@ -319,7 +319,9 @@ class Agent(Loggable):
         self.input_connection.append((id, keyword))
         self.logger.info(f"输入连接已添加，当前输入连接数: {len(self.input_connection)}")
     
-
+    def explore(self):
+        self.logger.info(f"开始探索模式，允许其他Agent发现")
+        self.system.add_explore_agent(self.id)
         
     def stop_explore(self):
         self.logger.info(f"停止探索模式")
