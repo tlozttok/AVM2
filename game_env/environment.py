@@ -5,7 +5,6 @@
 """
 
 import asyncio
-import subprocess
 import os
 import sys
 from typing import Optional, List, Tuple
@@ -17,7 +16,7 @@ from utils.logger import Loggable
 class DfrotzManager(Loggable):
     """
     dfrotz游戏管理器
-    负责启动、维护和与dfrotz交互式小说游戏进程通信
+    使用asyncio.create_subprocess_exec管理dfrotz进程
     """
     
     def __init__(self, game_file: str, dfrotz_path: str = "dfrotz"):
@@ -25,7 +24,7 @@ class DfrotzManager(Loggable):
         
         self.game_file = game_file
         self.dfrotz_path = dfrotz_path
-        self.process: Optional[subprocess.Popen] = None
+        self.process: Optional[asyncio.subprocess.Process] = None
         self._running = False
         self._output_queue = asyncio.Queue()
         self._input_queue = asyncio.Queue()
@@ -49,15 +48,14 @@ class DfrotzManager(Loggable):
         try:
             self.logger.info("正在启动dfrotz进程...")
             
-            # 启动dfrotz进程
-            self.process = subprocess.Popen(
-                [self.dfrotz_path, self.game_file],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
+            # 使用asyncio.create_subprocess_exec启动dfrotz进程
+            self.process = await asyncio.create_subprocess_exec(
+                self.dfrotz_path,
+                self.game_file,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                bufsize=0  # 无缓冲，立即输出
             )
             
             self._running = True
@@ -92,11 +90,17 @@ class DfrotzManager(Loggable):
             try:
                 self.logger.debug("正在终止dfrotz进程...")
                 self.process.terminate()
-                await asyncio.sleep(1)
-                if self.process.poll() is None:
-                    self.logger.debug("进程仍在运行，强制终止...")
+                
+                # 等待进程终止
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=5.0)
+                    self.logger.info("dfrotz进程已成功终止")
+                except asyncio.TimeoutError:
+                    self.logger.warning("进程终止超时，强制终止...")
                     self.process.kill()
-                self.logger.info("dfrotz进程已成功终止")
+                    await self.process.wait()
+                    self.logger.info("dfrotz进程已强制终止")
+                    
             except Exception as e:
                 error_msg = f"终止dfrotz进程时出错: {e}"
                 self.logger.error(error_msg)
@@ -117,22 +121,22 @@ class DfrotzManager(Loggable):
                 has_more = False
                 
                 while True:
+                    # 使用asyncio流读取字节数据
                     try:
-                        line = await asyncio.wait_for(asyncio.get_event_loop().run_in_executor(
-                        None, self.process.stdout.readline
-                        ),0.5)
-                    except TimeoutError as e:
-                        line=None
-                    if line:
+                        line_bytes = await asyncio.wait_for(self.process.stdout.readline(),0.5)
+                    except asyncio.TimeoutError:
+                        break
+                    if line_bytes:
                         line_count += 1
-                        line_stripped = line.strip()
+                        # 解码字节为字符串
+                        line = line_bytes.decode('utf-8', errors='replace').strip()
                         
                         # 检查是否包含各种分页提示
                         more_patterns = ["***MORE***", "[MORE]", "(MORE)", "--more--", "-- More --"]
                         found_more = False
                         
                         for pattern in more_patterns:
-                            if pattern in line_stripped:
+                            if pattern in line:
                                 self.logger.info(f"检测到分页提示 '{pattern}'，自动输入回车键")
                                 has_more = True
                                 found_more = True
@@ -140,8 +144,8 @@ class DfrotzManager(Loggable):
                                 break
                         
                         if not found_more:
-                            available_output.append(line_stripped)
-                            self.logger.debug(f"读取到dfrotz输出 #{line_count}: {line_stripped}")
+                            available_output.append(line)
+                            self.logger.debug(f"读取到dfrotz输出 #{line_count}: {line}")
                     else:
                         # 没有更多可读数据，跳出循环
                         break
@@ -158,13 +162,10 @@ class DfrotzManager(Loggable):
                     # 短暂等待，让dfrotz处理分页
                     await asyncio.sleep(0.1)
                 
-                # 进程可能已结束
-                if self.process.poll() is not None:
-                    self.logger.warning("dfrotz进程已结束，停止读取输出")
+                # 检查进程是否已结束
+                if self.process.returncode is not None:
+                    self.logger.warning(f"dfrotz进程已结束，返回码: {self.process.returncode}")
                     break
-                    
-                # 短暂等待，避免过度占用CPU
-                await asyncio.sleep(0.01)
                     
             except Exception as e:
                 error_msg = f"读取dfrotz输出时出错: {e}"
@@ -183,10 +184,10 @@ class DfrotzManager(Loggable):
                 text_input = await self._input_queue.get()
                 if text_input:
                     command_count += 1
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, 
-                        lambda: self.process.stdin.write(text_input + '\n') and self.process.stdin.flush()
-                    )
+                    # 使用asyncio流写入字节数据
+                    input_bytes = (text_input + '\n').encode('utf-8')
+                    self.process.stdin.write(input_bytes)
+                    await self.process.stdin.drain()  # 确保数据已发送
                     self.logger.info(f"已写入dfrotz输入 #{command_count}: {text_input}")
             except Exception as e:
                 error_msg = f"向dfrotz写入输入时出错: {e}"
@@ -207,14 +208,9 @@ class DfrotzManager(Loggable):
     
     async def get_output(self) -> str:
         """获取dfrotz的输出 - 贪婪获取，尽可能多获取"""
-        if not self._running:
-            error_msg = "dfrotz进程未运行，无法获取输出"
-            self.logger.error(error_msg)
-            raise RuntimeError(error_msg)
         
         output_chunks = []
         chunk_count = 0
-        
         # 贪婪获取：一次性获取队列中所有可用的输出块
         while not self._output_queue.empty():
             try:
@@ -233,7 +229,7 @@ class DfrotzManager(Loggable):
     
     def is_running(self) -> bool:
         """检查dfrotz进程是否在运行"""
-        running = self._running and self.process and self.process.poll() is None
+        running = self._running and self.process and self.process.returncode is None
         if not running:
             self.logger.debug("dfrotz进程不在运行状态")
         return running
