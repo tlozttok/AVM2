@@ -28,7 +28,7 @@ class LoggerFactory:
         
         # 创建 logger
         logger = logging.getLogger(class_name)
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.INFO)
         
         # 避免重复添加 handler
         if not logger.handlers:

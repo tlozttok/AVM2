@@ -359,7 +359,7 @@ class DfrotzInputAgent(InputAgent):
         """监控dfrotz输出并发送给连接的Agent - 贪婪监控"""
         self.logger.debug("开始监控dfrotz输出")
         output_count = 0
-        
+        empty_count = 0
         while self._running:
             try:
                 # 贪婪获取dfrotz输出
@@ -367,13 +367,21 @@ class DfrotzInputAgent(InputAgent):
                 
                 if output and self.output_connections:
                     output_count += 1
+                    empty_count=0
                     # 发送给所有连接的输出Agent
                     for connection_id in self.output_connections:
                         if self.message_bus:
                             await self.message_bus.send_message(output, connection_id, self.id)
                     
                     self.logger.info(f"DfrotzInputAgent贪婪发送输出 #{output_count} 到 {len(self.output_connections)} 个连接，长度: {len(output)} 字符")
+                else:
+                    empty_count+=1
                 
+                if empty_count>=500:
+                    empty_count=0
+                    for connection_id in self.output_connections:
+                        if self.message_bus:
+                            await self.message_bus.send_message("Game have not returned anything for 25 second. Send something.", connection_id, self.id)
                 # 短暂等待，避免过度占用CPU
                 await asyncio.sleep(0.05)
                 
