@@ -395,7 +395,7 @@ class Agent(Loggable):
         output_count=Counter([x[0] for x in self.output_connection])
         # 构建系统提示词（包含频率信息）
         system_prompt=self.pre_prompt+\
-            "\n<self_state>"+self.state+"</self_state>"+\
+            "这是上一次激活后你传来的状态。留下里面的记忆！必须传递下去！要不然你就会变成只能记住一次对话的痴呆症！\n<self_state>"+self.state+"</self_state>"+\
             "\n<output_keywords>"+str(output_count)+"</output_keywords>"+\
             "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"+\
             "\n<your_id>"+self.id+"</your_id>"+\
