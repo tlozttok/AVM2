@@ -330,13 +330,16 @@ class Agent(Loggable):
     def seek(self,keyword):
         self.logger.info(f"寻找关键字 '{keyword}' 的Agent")
         agent=self.system.seek_agent(keyword)
-        if not agent in [output[1] for output in self.output_connection]:
+        if agent is None:
+            self.logger.error(f"未找到关键字 '{keyword}' 的Agent")
+            return
+        if not (agent,keyword) in self.output_connection:
             self.output_connection.append((keyword,agent))
             self.logger.info(f"已建立输出连接到 {agent}")
             
     def split(self,state,keyword):
         self.logger.info(f"执行Agent分裂，状态: {state}, 关键字: {keyword}")
-        splited_connection=list(filter(lambda x:x[1] in keyword,self.input_connection))
+        splited_connection=list(filter(lambda x:x[1] == keyword,self.input_connection))
         self.logger.debug(f"找到 {len(splited_connection)} 个需要分裂的连接")
         self.input_connection=list(filter(lambda x:x[1] not in keyword,self.input_connection))
         self.logger.debug(f"分裂后剩余 {len(self.input_connection)} 个输入连接")
