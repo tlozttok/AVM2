@@ -54,16 +54,14 @@ class MessageBus(Loggable):
         else:
             self.logger.warning(f"尝试注销不存在的代理: {agent_id}")
             
-    def send_message(self, message: str, receiver_id: str, sender_id: str)->Optional[asyncio.Task]:
+    def send_message(self, message: str, receiver_id: str, sender_id: str):
         self.logger.debug(f"发送消息: {sender_id} -> {receiver_id}, 长度: {len(message)} 字符")
         if receiver_id in self.agents:
             self.logger.debug(f"找到接收者 {receiver_id}，转发消息")
-            task=self.agents[receiver_id].receive_message(message, sender_id)
+            self.agents[receiver_id].receive_message(message, sender_id)
             self.logger.info(f"消息已成功发送到 {receiver_id}")
         else:
             self.logger.error(f"接收者 {receiver_id} 未在消息总线中注册，消息发送失败")
-            task=None
-        return task
 
 
 class AgentSystem(Loggable):
@@ -78,6 +76,9 @@ class AgentSystem(Loggable):
         self.frequency_monitor = FrequencyMonitor()
         self.logger.debug("频率监控器已创建")
         
+        # 系统运行状态
+        self._system_running = False
+        
         self.logger.info("AgentSystem 实例已创建")
         
         
@@ -91,6 +92,12 @@ class AgentSystem(Loggable):
         # 在频率监控器中注册Agent
         self.frequency_monitor.register_agent(agent.id)
         # 减少日志记录，只在调试模式下记录详细频率信息
+        
+        # 如果系统正在运行，自动启动Agent处理循环
+        if self._system_running and hasattr(agent, 'start_processing'):
+            # 使用ensure_future而不是create_task，避免立即创建任务
+            asyncio.ensure_future(agent.start_processing())
+            self.logger.debug(f"已安排启动Agent处理循环: {agent.id}")
         
         self.logger.info(f"代理 {agent.id} 已添加到系统")
     
@@ -119,6 +126,26 @@ class AgentSystem(Loggable):
             self.logger.debug(f"停止输入代理: {agent.id}")
             await agent.stop()
         self.logger.info("所有输入代理已停止")
+    
+    async def start_all_agents(self):
+        """启动所有Agent的处理循环"""
+        self.logger.info("开始启动所有Agent处理循环")
+        self._system_running = True
+        for agent_id, agent in self.agents.items():
+            if hasattr(agent, 'start_processing'):
+                self.logger.debug(f"启动Agent处理循环: {agent_id}")
+                await agent.start_processing()
+        self.logger.info("所有Agent处理循环已启动")
+    
+    async def stop_all_agents(self):
+        """停止所有Agent的处理循环"""
+        self.logger.info("开始停止所有Agent处理循环")
+        self._system_running = False
+        for agent_id, agent in self.agents.items():
+            if hasattr(agent, 'stop_processing'):
+                self.logger.debug(f"停止Agent处理循环: {agent_id}")
+                await agent.stop_processing()
+        self.logger.info("所有Agent处理循环已停止")
         
     def remove_agent(self, agent_id: str):
         self.logger.debug(f"尝试移除代理: {agent_id}")
@@ -221,10 +248,15 @@ class Agent(Loggable):
         self.state:str=""
         self.input_connection:List[Tuple[str, str]]=[]
         self.output_connection:List[Tuple[str, str]]=[]
-        self.input_cache:List[Tuple[str,str]]=[]
+        self.input_queue = asyncio.Queue()  # 使用队列替代列表和事件
         self.message_bus=None
         self.system=None
         self.pre_prompt=pre_prompt
+        
+        # 处理循环控制
+        self._running = False
+        self._processing_task = None
+        self._processing_interval = 0.1  # 处理间隔（秒）
         
         # 激活频率计算器
         self.frequency_calculator = ActivationFrequencyCalculator(
@@ -243,7 +275,7 @@ class Agent(Loggable):
         self.logger.info(f"Agent实例已创建，ID: {self.id}")
         
         
-    def receive_message(self, message:str, sender:str)->Optional[asyncio.Task]:
+    def receive_message(self, message:str, sender:str):
         self.logger.debug(f"收到来自 {sender} 的消息: {message}")
         keyword=list(filter(lambda x:x[0]==sender, self.input_connection))
         if keyword:
@@ -265,22 +297,19 @@ class Agent(Loggable):
         else:
             keyword=sender
             self.logger.warning(f"未找到发送者 {sender} 的输入连接，使用发送者ID作为关键字")
-        self.input_cache.append((keyword, message))
-        self.logger.debug(f"输入缓存大小: {len(self.input_cache)}")
-        if self.should_activate():
-            self.logger.debug("满足激活条件，开始激活")
-            task=asyncio.create_task(self.activate())
-            return task
-        else:
-            self.logger.debug("不满足激活条件，等待更多输入")
-            return None
+        
+        # 将消息放入队列
+        self.input_queue.put_nowait((keyword, message))
+        self.logger.debug(f"消息已加入队列，队列大小: {self.input_queue.qsize()}")
+        
+        # 队列会自动唤醒处理循环，无需手动触发事件
             
     def should_activate(self):
-        should_activate = len(self.input_cache) > 0
+        should_activate = not self.input_queue.empty()
         if should_activate:
-            self.logger.debug(f"激活检查: 输入缓存有 {len(self.input_cache)} 条消息，需要激活")
+            self.logger.debug(f"激活检查: 队列中有消息，需要激活")
         else:
-            self.logger.debug("激活检查: 输入缓存为空，不需要激活")
+            self.logger.debug("激活检查: 队列为空，不需要激活")
         return should_activate
         
     async def send_message(self, message:str, keyword:str):
@@ -295,7 +324,7 @@ class Agent(Loggable):
         
         for uid in uids:
             self.logger.debug(f"发送消息到接收者 {uid}")
-            await self.message_bus.send_message(message, uid, self.id)
+            self.message_bus.send_message(message, uid, self.id)
         self.logger.info(f"消息已发送到 {len(uids)} 个接收者")
             
     def delete_input_connection(self, keyword:str):
@@ -381,81 +410,7 @@ class Agent(Loggable):
         self.logger.debug(f"获取到 {len(keyword_frequencies)} 个keyword的消息接收频率信息")
         return keyword_frequencies
         
-    async def activate(self):
-        self.logger.info(f"激活Agent，处理 {len(self.input_cache)} 条输入缓存")
-        
-        # 记录激活频率
-        self.frequency_calculator.record_activation()
-        # 减少日志记录，只在调试模式下记录详细频率信息
-        
-        # 获取频率统计信息
-        frequency_stats = self.frequency_calculator.get_frequency_stats()
-        # 减少日志记录，只在调试模式下记录详细频率信息
-        
-        # 获取keyword消息接收频率
-        keyword_frequencies = self.get_keyword_message_frequencies()
-        
-        output_count=Counter([x[0] for x in self.output_connection])
-        # 构建系统提示词（包含频率信息）
-        system_prompt=self.pre_prompt+\
-            "这是上一次激活后你传来的状态。留下里面的记忆！必须传递下去！要不然你就会变成只能记住一次对话的痴呆症！\n<self_state>"+self.state+"</self_state>"+\
-            "\n<output_keywords>"+str(output_count)+"</output_keywords>"+\
-            "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"+\
-            "\n<your_id>"+self.id+"</your_id>"+\
-            "\n<activation_frequency>"+\
-            f"瞬时频率: {frequency_stats['instant_frequency_hz']:.3f} Hz, "+\
-            f"移动平均: {frequency_stats['moving_average_frequency_hz']:.3f} Hz"+\
-            "</activation_frequency>"+\
-            "\n<keyword_message_frequencies>"+\
-            str(keyword_frequencies)+\
-            "</keyword_message_frequencies>"
-        
-        self.logger.info("系统提示词已构建，包含激活频率信息")
-        
-        # 构建用户提示词
-        user_prompt="\n".join([f"{input[0]} : {input[1]}" for input in self.input_cache])
-        
-        self.logger.debug(f"系统提示词长度: {len(system_prompt)} 字符")
-        self.logger.debug(f"用户提示词长度: {len(user_prompt)} 字符")
-        self.logger.debug(f"输出关键字: {[x[0] for x in self.output_connection]}")
-        
-        message=[{"role": "system", "content": system_prompt},{"role": "user", "content": user_prompt}]
-        
-        try:
-            self.logger.info(f"调用LLM API，模型: {MODEL_NAME}")
-            start_time = time.time()
-            response = await openai_client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=message,
-                temperature=0.7
-            )
-            response_time = time.time() - start_time
-            response_content = response.choices[0].message.content
-            
-            # 记录LLM调用到专用日志
-            tokens_used = response.usage.total_tokens if hasattr(response, 'usage') and response.usage else None
-            llm_logger.log_llm_call(
-                agent_id=self.id,
-                model=MODEL_NAME,
-                system_prompt=system_prompt.replace(pre_prompt,"[PRE_PROMPT]"),
-                user_prompt=user_prompt,
-                output=response_content,
-                response_time=response_time,
-                tokens_used=tokens_used
-            )
-            
-            self.logger.info(f"LLM响应长度: {len(response_content)} 字符，响应时间: {response_time:.2f}秒")
-            self.logger.debug(f"LLM响应内容: {response_content}")
-            
-            self.input_cache=[]
-            self.logger.debug("输入缓存已清空")
-            
-            await self.process_response(response_content)
-        except Exception as e:
-            self.logger.error(f"LLM调用失败: {e}")
-            self.logger.exception("LLM调用异常详情:")
-            # 保留输入缓存以便重试
-            self.logger.warning(f"保留 {len(self.input_cache)} 条输入缓存以便重试")
+
         
     async def process_response(self, response):
         self.logger.info(f"处理LLM响应")
@@ -466,8 +421,6 @@ class Agent(Loggable):
         state_updates = 0
         signal_processing = 0
         message_sending = 0
-        
-        task_list=[]
         
         for keyword, content in matches:
             self.logger.debug(f"处理标签 '{keyword}': {content[:50]}...")
@@ -482,12 +435,7 @@ class Agent(Loggable):
             else:
                 message_sending += 1
                 self.logger.debug(f"发送消息到关键字 '{keyword}'，内容长度: {len(content)} 字符")
-                task=self.send_message(content,keyword)
-                if task:
-                    task_list.append(task)
-                
-        for  task in task_list:
-            asyncio.ensure_future(task)
+                await self.send_message(content,keyword)
         
         self.logger.info(f"响应处理完成: 状态更新 {state_updates} 次，处理信号 {signal_processing} 个，发送消息 {message_sending} 条")
                 
@@ -520,6 +468,181 @@ class Agent(Loggable):
         except Exception as e:
             self.logger.error(f"信号处理失败: {e}")
             self.logger.exception("信号处理异常详情:")
+    
+    async def start_processing(self):
+        """
+        启动Agent处理循环
+        """
+        if self._running:
+            self.logger.warning("Agent处理循环已在运行")
+            return
+        
+        self._running = True
+        self._processing_task = asyncio.create_task(self._processing_loop())
+        self.logger.info("Agent处理循环已启动")
+    
+    async def stop_processing(self):
+        """
+        停止Agent处理循环
+        """
+        if not self._running:
+            self.logger.warning("Agent处理循环未运行")
+            return
+        
+        self._running = False
+        
+        # 向队列发送一个特殊消息来唤醒处理循环
+        # 这样处理循环可以正常退出，而不是等待超时
+        try:
+            self.input_queue.put_nowait(("__STOP__", ""))
+        except:
+            pass
+        
+        if self._processing_task:
+            self._processing_task.cancel()
+            try:
+                await self._processing_task
+            except asyncio.CancelledError:
+                pass
+        
+        self.logger.info("Agent处理循环已停止")
+    
+    async def _processing_loop(self):
+        """
+        Agent处理循环
+        持续从队列中获取消息并处理
+        """
+        self.logger.debug("Agent处理循环开始")
+        loop_count = 0
+        
+        while self._running:
+            loop_count += 1
+            try:
+                # 使用队列的get方法等待消息，带超时
+                try:
+                    # 等待消息，最多等待处理间隔时间
+                    message = await asyncio.wait_for(
+                        self.input_queue.get(), 
+                        timeout=self._processing_interval
+                    )
+                    
+                    # 收到消息，立即处理
+                    self.logger.debug(f"第 {loop_count} 次循环: 收到消息，立即处理")
+                    
+                    # 检查是否是停止信号
+                    if message[0] == "__STOP__":
+                        self.logger.debug("收到停止信号，退出处理循环")
+                        break
+                    
+                    # 将收到的消息和其他队列中的消息一起处理
+                    messages = [message]
+                    while not self.input_queue.empty():
+                        try:
+                            additional_message = self.input_queue.get_nowait()
+                            # 检查停止信号
+                            if additional_message[0] == "__STOP__":
+                                self.logger.debug("收到停止信号，退出处理循环")
+                                break
+                            messages.append(additional_message)
+                        except asyncio.QueueEmpty:
+                            break
+                    
+                    # 批量处理所有收集到的消息
+                    await self._process_messages_batch(messages)
+                    
+                except asyncio.TimeoutError:
+                    # 超时，没有新消息，继续循环
+                    pass
+                
+            except asyncio.CancelledError:
+                self.logger.debug("Agent处理循环被取消")
+                break
+            except Exception as e:
+                self.logger.error(f"Agent处理循环异常: {e}")
+                self.logger.exception("处理循环异常详情:")
+                await asyncio.sleep(1)  # 异常后等待1秒再继续
+        
+        self.logger.info(f"Agent处理循环结束，共执行 {loop_count} 次循环")
+    
+    async def _process_messages_batch(self, messages):
+        """
+        批量处理消息
+        
+        Args:
+            messages: 要处理的消息列表
+        """
+        self.logger.info(f"批量处理 {len(messages)} 条消息")
+        
+        # 记录激活频率
+        self.frequency_calculator.record_activation()
+        
+        # 获取频率统计信息
+        frequency_stats = self.frequency_calculator.get_frequency_stats()
+        
+        # 获取keyword消息接收频率
+        keyword_frequencies = self.get_keyword_message_frequencies()
+        
+        output_count=Counter([x[0] for x in self.output_connection])
+        # 构建系统提示词（包含频率信息）
+        system_prompt=self.pre_prompt+\
+            "这是上一次激活后你传来的状态。留下里面的记忆！必须传递下去！要不然你就会变成只能记住一次对话的痴呆症！\n<self_state>"+self.state+"</self_state>"+\
+            "\n<output_keywords>"+str(output_count)+"</output_keywords>"+\
+            "\n<input_keywords>"+str([x[1] for x in self.input_connection])+"</input_keywords>"+\
+            "\n<your_id>"+self.id+"</your_id>"+\
+            "\n<activation_frequency>"+\
+            f"瞬时频率: {frequency_stats['instant_frequency_hz']:.3f} Hz, "+\
+            f"移动平均: {frequency_stats['moving_average_frequency_hz']:.3f} Hz"+\
+            "</activation_frequency>"+\
+            "\n<keyword_message_frequencies>"+\
+            str(keyword_frequencies)+\
+            "</keyword_message_frequencies>"
+        
+        self.logger.info("系统提示词已构建，包含激活频率信息")
+        
+        # 构建用户提示词
+        user_prompt="\n".join([f"{input[0]} : {input[1]}" for input in messages])
+        
+        self.logger.debug(f"系统提示词长度: {len(system_prompt)} 字符")
+        self.logger.debug(f"用户提示词长度: {len(user_prompt)} 字符")
+        
+        message_data=[{"role": "system", "content": system_prompt},{"role": "user", "content": user_prompt}]
+        
+        try:
+            self.logger.info(f"调用LLM API，模型: {MODEL_NAME}")
+            start_time = time.time()
+            response = await openai_client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=message_data,
+                temperature=0.7
+            )
+            response_time = time.time() - start_time
+            response_content = response.choices[0].message.content
+            
+            # 记录LLM调用到专用日志
+            tokens_used = response.usage.total_tokens if hasattr(response, 'usage') and response.usage else None
+            llm_logger.log_llm_call(
+                agent_id=self.id,
+                model=MODEL_NAME,
+                system_prompt=system_prompt.replace(pre_prompt,"[PRE_PROMPT]"),
+                user_prompt=user_prompt,
+                output=response_content,
+                response_time=response_time,
+                tokens_used=tokens_used
+            )
+            
+            self.logger.info(f"LLM响应长度: {len(response_content)} 字符，响应时间: {response_time:.2f}秒")
+            
+            # 消息处理完成
+            self.logger.debug("消息批量处理完成")
+            
+            await self.process_response(response_content)
+        except Exception as e:
+            self.logger.error(f"LLM调用失败: {e}")
+            self.logger.exception("LLM调用异常详情:")
+            # 处理失败时，将消息重新放回队列以便重试
+            for msg in messages:
+                self.input_queue.put_nowait(msg)
+            self.logger.warning(f"处理失败，已将 {len(messages)} 条消息重新放回队列")
 
 
 class OutputAgent(Loggable, ABC):
@@ -529,8 +652,14 @@ class OutputAgent(Loggable, ABC):
         super().__init__()
         self.id: str = str(uuid.uuid4())
         self.input_connections:List[str]=[]
+        self.input_queue = asyncio.Queue()  # 使用队列存储消息
         self.message_bus = None
         self.system = None
+        
+        # 处理循环控制
+        self._running = False
+        self._processing_task = None
+        self._processing_interval = 0.1  # 处理间隔（秒）
         
         self.logger.info(f"OutputAgent实例已创建，ID: {self.id}")
         
@@ -542,7 +671,7 @@ class OutputAgent(Loggable, ABC):
         
         pass
     
-    async def receive_message(self, message: str, sender: str):
+    def receive_message(self, message: str, sender: str):
         self.logger.debug(f"收到来自 {sender} 的消息: {message}")
         # 执行其他Agent送来的数据
         if sender in  self.input_connections:
@@ -553,12 +682,121 @@ class OutputAgent(Loggable, ABC):
                 sender_id=sender
             )
             
-            self.logger.debug(f"发送者 {sender} 在输入连接列表中，执行探索和数据输出")
-            self.explore(message)
-            await self.execute_data(message)
-            self.logger.info(f"消息已成功处理并输出")
+            self.logger.debug(f"发送者 {sender} 在输入连接列表中，将消息放入队列")
+            self.input_queue.put_nowait((sender, message))
+            self.logger.debug(f"队列大小: {self.input_queue.qsize()}")
         else:
             self.logger.warning(f"未知发送者 {sender}，忽略消息。当前输入连接: {self.input_connections}")
+    
+    async def start_processing(self):
+        """
+        启动OutputAgent处理循环
+        """
+        if self._running:
+            self.logger.warning("OutputAgent处理循环已在运行")
+            return
+        
+        self._running = True
+        self._processing_task = asyncio.create_task(self._processing_loop())
+        self.logger.info("OutputAgent处理循环已启动")
+    
+    async def stop_processing(self):
+        """
+        停止OutputAgent处理循环
+        """
+        if not self._running:
+            self.logger.warning("OutputAgent处理循环未运行")
+            return
+        
+        self._running = False
+        
+        # 向队列发送一个特殊消息来唤醒处理循环
+        try:
+            self.input_queue.put_nowait(("__STOP__", ""))
+        except:
+            pass
+        
+        if self._processing_task:
+            self._processing_task.cancel()
+            try:
+                await self._processing_task
+            except asyncio.CancelledError:
+                pass
+        
+        self.logger.info("OutputAgent处理循环已停止")
+    
+    async def _processing_loop(self):
+        """
+        OutputAgent处理循环
+        持续从队列中获取消息并处理
+        """
+        self.logger.debug("OutputAgent处理循环开始")
+        loop_count = 0
+        
+        while self._running:
+            loop_count += 1
+            try:
+                # 使用队列的get方法等待消息，带超时
+                try:
+                    # 等待消息，最多等待处理间隔时间
+                    message = await asyncio.wait_for(
+                        self.input_queue.get(), 
+                        timeout=self._processing_interval
+                    )
+                    
+                    # 检查是否是停止信号
+                    if message[0] == "__STOP__":
+                        self.logger.debug("收到停止信号，退出处理循环")
+                        break
+                    
+                    # 收到消息，立即处理
+                    self.logger.debug(f"第 {loop_count} 次循环: 收到消息，立即处理")
+                    
+                    # 将收到的消息和其他队列中的消息一起处理
+                    messages = [message]
+                    while not self.input_queue.empty():
+                        try:
+                            additional_message = self.input_queue.get_nowait()
+                            # 检查停止信号
+                            if additional_message[0] == "__STOP__":
+                                self.logger.debug("收到停止信号，退出处理循环")
+                                break
+                            messages.append(additional_message)
+                        except asyncio.QueueEmpty:
+                            break
+                    
+                    # 批量处理所有收集到的消息
+                    await self._process_messages_batch(messages)
+                    
+                except asyncio.TimeoutError:
+                    # 超时，没有新消息，继续循环
+                    pass
+                
+            except asyncio.CancelledError:
+                self.logger.debug("OutputAgent处理循环被取消")
+                break
+            except Exception as e:
+                self.logger.error(f"OutputAgent处理循环异常: {e}")
+                self.logger.exception("处理循环异常详情:")
+                await asyncio.sleep(1)  # 异常后等待1秒再继续
+        
+        self.logger.info(f"OutputAgent处理循环结束，共执行 {loop_count} 次循环")
+    
+    async def _process_messages_batch(self, messages):
+        """
+        批量处理消息
+        
+        Args:
+            messages: 要处理的消息列表，格式为(sender, message)
+        """
+        self.logger.info(f"批量处理 {len(messages)} 条消息")
+        
+        for sender, message in messages:
+            self.logger.debug(f"处理来自 {sender} 的消息")
+            self.explore(message)
+            await self.execute_data(message)
+        
+        self.logger.info(f"消息批量处理完成")
         
     @abstractmethod
     async def execute_data(self, data: str):
@@ -676,7 +914,7 @@ class InputAgent(Loggable, ABC):
         self.logger.info(f"向 {len(self.output_connections)} 个输出连接发送数据")
         for receiver_id in self.output_connections:
             self.logger.debug(f"发送数据到接收者: {receiver_id}")
-            await self.message_bus.send_message(data, receiver_id, self.id)
+            self.message_bus.send_message(data, receiver_id, self.id)
         
         self.logger.info("数据发送完成")
             
