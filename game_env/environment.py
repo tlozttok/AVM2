@@ -371,7 +371,7 @@ class DfrotzInputAgent(InputAgent):
                     # 发送给所有连接的输出Agent
                     for connection_id in self.output_connections:
                         if self.message_bus:
-                            await self.message_bus.send_message(output, connection_id, self.id)
+                            self.message_bus.send_message(output, connection_id, self.id)
                     
                     self.logger.info(f"DfrotzInputAgent贪婪发送输出 #{output_count} 到 {len(self.output_connections)} 个连接，长度: {len(output)} 字符")
                 else:
@@ -381,7 +381,7 @@ class DfrotzInputAgent(InputAgent):
                     empty_count=0
                     for connection_id in self.output_connections:
                         if self.message_bus:
-                            await self.message_bus.send_message("Game have not returned anything for 25 second. Send something.", connection_id, self.id)
+                            self.message_bus.send_message("Game have not returned anything for 25 second. Send something.", connection_id, self.id)
                 # 短暂等待，避免过度占用CPU
                 await asyncio.sleep(0.05)
                 

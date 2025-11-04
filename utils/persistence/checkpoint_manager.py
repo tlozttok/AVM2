@@ -180,12 +180,26 @@ class CheckpointManager:
         Returns:
             序列化的Agent数据
         """
+        # 将队列中的消息转换为列表进行保存
+        input_cache = []
+        if hasattr(agent, 'input_queue'):
+            # 获取队列中的所有消息
+            while not agent.input_queue.empty():
+                try:
+                    message = agent.input_queue.get_nowait()
+                    input_cache.append(message)
+                except:
+                    break
+            # 将消息重新放回队列（不影响运行时状态）
+            for msg in input_cache:
+                agent.input_queue.put_nowait(msg)
+        
         agent_data = {
             'id': agent.id,
             'state': agent.state,
             'input_connection': agent.input_connection.copy(),
             'output_connection': agent.output_connection.copy(),
-            'input_cache': agent.input_cache.copy(),
+            'input_cache': input_cache,  # 保存队列中的消息
             'pre_prompt': agent.pre_prompt,
             'class_name': agent.__class__.__name__
         }
@@ -244,13 +258,17 @@ class CheckpointManager:
         agent.state = agent_data['state']
         agent.input_connection = agent_data['input_connection']
         agent.output_connection = agent_data['output_connection']
-        agent.input_cache = agent_data['input_cache']
         agent.pre_prompt = agent_data['pre_prompt']
+        
+        # 将保存的input_cache放入队列
+        input_cache = agent_data.get('input_cache', [])
+        for msg in input_cache:
+            agent.input_queue.put_nowait(msg)
         
         # 恢复频率统计信息（这里只记录，不恢复完整的计算器状态）
         # 频率计算器会在后续运行中重新计算
         
-        self.logger.debug(f"重建Agent: {agent.id}, 状态长度: {len(agent.state)}, 输入缓存: {len(agent.input_cache)}")
+        self.logger.debug(f"重建Agent: {agent.id}, 状态长度: {len(agent.state)}, 队列消息: {len(input_cache)}")
         
         return agent
     

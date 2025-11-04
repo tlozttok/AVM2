@@ -97,6 +97,9 @@ async def main():
     logger.info("启动所有输入代理")
     await system.start_all_input_agents()
     
+    logger.info("启动所有Agent处理循环")
+    await system.start_all_agents()
+    
     logger.info("所有代理已启动")
     
     try:
@@ -130,6 +133,7 @@ async def main():
     finally:
         # 停止系统
         logger.info("开始停止系统...")
+        await system.stop_all_agents()
         await system.stop_all_input_agents()
         
         logger.info("所有代理已停止")
