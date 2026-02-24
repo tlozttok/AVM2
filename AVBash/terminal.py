@@ -270,7 +270,7 @@ class TerminalManager:
 
     def create_agents(self):
         """创建用于接入 Agent 网络的 InputAgent 和 OutputAgent 子类"""
-        from .terminal_agents import TerminalInputAgent, TerminalOutputAgent
+        from AVBash.terminal_agents import TerminalInputAgent, TerminalOutputAgent
 
         input_agent = TerminalInputAgent(self)
         output_agent = TerminalOutputAgent(self)
@@ -654,30 +654,33 @@ class TerminalManager:
 
 async def main():
     """示例使用"""
-    term = TerminalManager(fps=10)
+    from .terminal_agents import TerminalPair
 
-    # 设置渲染回调（这里打印到控制台）
-    term.set_render_callback(lambda text: print(text + "\n" + "-" * 40))
+    # 创建终端对
+    pair = TerminalPair(fps=10)
 
-    await term.start()
+    # 设置渲染回调（直接打印到控制台）
+    pair.set_render_callback(lambda text: print(text + "\n" + "-" * 40))
+
+    await pair.start()
 
     try:
         # 模拟输入
-        await term.feed_input("echo Hello World")
+        await pair.send_command("echo Hello World")
         await asyncio.sleep(0.5)
-        await term.feed_input("/enter")
+        await pair.send_command("/enter")
         await asyncio.sleep(1)
 
         # 创建新窗口
-        await term.feed_input("/new Second Shell")
+        await pair.send_command("/new Second Shell")
         await asyncio.sleep(0.5)
 
         # 列出窗口
-        await term.feed_input("/list")
+        await pair.send_command("/list")
         await asyncio.sleep(1)
 
     finally:
-        await term.stop()
+        await pair.stop()
 
 
 if __name__ == "__main__":

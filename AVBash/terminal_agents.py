@@ -86,7 +86,7 @@ class TerminalPair:
     """
 
     def __init__(self, fps: int = 10, default_rows: int = 20, default_cols: int = 80):
-        from .terminal import TerminalManager
+        from AVBash.terminal import TerminalManager
 
         self.terminal = TerminalManager(fps, default_rows, default_cols)
         self.input_agent: Optional[TerminalInputAgent] = None
