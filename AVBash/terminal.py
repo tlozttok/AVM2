@@ -7,27 +7,9 @@
 import asyncio
 import os
 import pty
-import sys
 import re
 import time
 from typing import Optional, Callable, Dict, List
-from abc import abstractmethod
-
-# 尝试导入 driver 模块中的 OutputAgent
-try:
-    from driver.driver import OutputAgent
-    OUTPUT_AGENT_BASE = OutputAgent
-except ImportError:
-    # 如果 driver 不可用，提供基类占位
-    class OutputAgent:
-        def __init__(self):
-            self.id = "terminal"
-            self.input_connections = []
-            self.input_queue = None
-            self.message_bus = None
-            self.system = None
-
-    OUTPUT_AGENT_BASE = OutputAgent
 
 
 # ANSI 转义码正则表达式
@@ -245,23 +227,14 @@ class Window:
                     pass
 
 
-class TerminalManager(Output_AGENT_BASE):
+class TerminalManager:
     """
     多窗口终端管理器
-    作为 OutputAgent 接入系统，接收来自 LLM Agent 的命令
+    独立的终端核心，不依赖 Agent 基类
+    通过 create_agents() 方法创建 InputAgent 和 OutputAgent 子类来接入网络
     """
 
     def __init__(self, fps: int = 10, default_rows: int = 20, default_cols: int = 80):
-        # 调用父类初始化
-        if OUTPUT_AGENT_BASE != OutputAgent:
-            super().__init__()
-        else:
-            self.id = "terminal"
-            self.input_connections = []
-            self.input_queue = None
-            self.message_bus = None
-            self.system = None
-
         self.fps = fps
         self.default_rows = default_rows
         self.default_cols = default_cols
@@ -292,9 +265,24 @@ class TerminalManager(Output_AGENT_BASE):
             "help": "显示帮助",
         }
 
+        # 消息输出回调（用于发送 info/error 消息）
+        self.message_callback: Optional[Callable[[str], None]] = None
+
+    def create_agents(self):
+        """创建用于接入 Agent 网络的 InputAgent 和 OutputAgent 子类"""
+        from .terminal_agents import TerminalInputAgent, TerminalOutputAgent
+
+        input_agent = TerminalInputAgent(self)
+        output_agent = TerminalOutputAgent(self)
+        return input_agent, output_agent
+
     def set_render_callback(self, callback: Callable[[str], None]):
         """设置渲染输出回调"""
         self.render_callback = callback
+
+    def set_message_callback(self, callback: Callable[[str], None]):
+        """设置消息输出回调（用于 info/error 消息）"""
+        self.message_callback = callback
 
     async def start(self):
         """启动终端管理器"""
@@ -350,19 +338,6 @@ class TerminalManager(Output_AGENT_BASE):
                 break
             except Exception as e:
                 await asyncio.sleep(frame_interval)
-
-    # ==================== OutputAgent 接口实现 ====================
-
-    def explore(self, message: str):
-        """根据 message 决定是否探索 - 终端不主动探索"""
-        pass
-
-    async def execute_data(self, data: str):
-        """
-        执行接收到的数据 - 作为 OutputAgent 的核心方法
-        data 包含来自 LLM Agent 的输入字符和控制命令
-        """
-        await self.feed_input(data)
 
     # ==================== 核心输入处理 ====================
 
@@ -665,14 +640,14 @@ class TerminalManager(Output_AGENT_BASE):
     # ==================== 辅助方法 ====================
 
     async def _send_info(self, message: str):
-        """发送信息消息（可以通过回调或其他方式通知）"""
-        # 可以在这里实现将信息添加到某个系统消息缓冲区
-        pass
+        """发送信息消息"""
+        if self.message_callback:
+            self.message_callback(f"[INFO] {message}")
 
     async def _send_error(self, message: str):
         """发送错误消息"""
-        # 可以在这里实现将错误添加到某个错误缓冲区
-        pass
+        if self.message_callback:
+            self.message_callback(f"[ERROR] {message}")
 
 
 # ==================== 使用示例 ====================
