@@ -2,11 +2,14 @@
 """
 终端命令行程序
 直接在命令行中运行多窗口终端
+支持逐字符输入显示
 """
 
 import asyncio
 import sys
 import os
+import tty
+import termios
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,35 +27,24 @@ async def main():
     print("  - 普通文本直接输入到焦点窗口")
     print("  - 以 / 开头的为控制命令（如 /help 查看帮助）")
     print("  - 输入 // 表示字面的 / 字符")
-    print("  - 按 Ctrl+C 退出")
+    print("  - Ctrl+C 退出")
     print()
 
-    # 创建终端管理器
+    # 创建终端管理器（不指定 cols，使用终端实际宽度）
     term = TerminalManager(fps=10)
-
-    # 当前输入行
-    input_buffer = []
 
     def on_render(text):
         """渲染回调"""
-        # 清屏并显示渲染结果
-        os.system('clear' if os.name != 'nt' else 'cls')
-        print(text)
-        print()
-        # 显示输入提示
-        if term.focused_window_id and term.focused_window_id in term.windows:
-            window = term.windows[term.focused_window_id]
-            prompt = f"[窗口{window.id}] 输入：{window.input_buffer}"
-        else:
-            prompt = "[无焦点窗口]"
-        print(prompt, end='', flush=True)
-        # 重新输出用户已输入的字符
-        for ch in ''.join(input_buffer):
-            print(ch, end='', flush=True)
+        # 清屏并移动光标到左上角
+        sys.stdout.write('\x1b[2J\x1b[H\x1b[3J')
+        # 将 \n 替换为 \r\n 确保回车换行
+        sys.stdout.write(text.replace('\n', '\r\n'))
+        sys.stdout.write('\r\n')
+        sys.stdout.flush()
 
     def on_message(msg):
         """消息回调"""
-        print(f"\n{msg}\n", end='', flush=True)
+        pass  # 消息已经在渲染中显示
 
     term.set_render_callback(on_render)
     term.set_message_callback(on_message)
@@ -60,27 +52,56 @@ async def main():
     # 启动终端
     await term.start()
 
-    # 异步读取用户输入
-    loop = asyncio.get_event_loop()
+    # 保存原始终端设置
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
 
     try:
+        # 设置为原始模式
+        tty.setraw(fd)
+
+        # 异步读取用户输入（逐字符）
+        loop = asyncio.get_event_loop()
+
+        async def read_char():
+            """异步读取单个字符"""
+            return await loop.run_in_executor(None, lambda: sys.stdin.read(1))
+
         while term._running:
-            # 使用线程池运行阻塞的 input()
             try:
-                user_input = await loop.run_in_executor(None, input)
+                ch = await read_char()
+
+                if not ch:
+                    break
+
+                # Ctrl+C 退出
+                if ch == '\x03':
+                    break
+
+                # Enter 提交
+                if ch == '\r' or ch == '\n':
+                    # 手动打印回车换行
+                    sys.stdout.write('\r\n')
+                    sys.stdout.flush()
+                    await term.feed_input('\n')
+                else:
+                    # 逐字符发送到终端
+                    await term.feed_input(ch)
+                    # 手动回显字符（原始模式下不会自动显示）
+                    sys.stdout.write(ch)
+                    sys.stdout.flush()
+
             except (EOFError, KeyboardInterrupt):
                 break
-
-            if user_input == 'quit' or user_input == '/quit':
-                break
-
-            # 发送输入到终端
-            await term.feed_input(user_input + '\n')
 
     except KeyboardInterrupt:
         pass
     finally:
+        # 恢复终端设置
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
         await term.stop()
+        os.system('clear' if os.name != 'nt' else 'cls')
         print("\n终端已退出")
 
 

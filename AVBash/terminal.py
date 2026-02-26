@@ -21,17 +21,44 @@ def strip_ansi(text: str) -> str:
     return ANSI_ESCAPE_PATTERN.sub('', text)
 
 
+def display_width(text: str) -> int:
+    """计算字符串的显示宽度"""
+    # 使用 wcwidth 库或简单计算：中文字符宽度为 2，其他为 1
+    width = 0
+    for char in text:
+        # CJK 字符宽度为 2
+        if '\u4e00' <= char <= '\u9fff' or '\u3000' <= char <= '\u303f':
+            width += 2
+        else:
+            width += 1
+    return width
+
+
+def truncate_to_width(text: str, max_width: int) -> str:
+    """截断字符串到指定显示宽度"""
+    result = ""
+    current_width = 0
+    for char in text:
+        char_width = 2 if ('\u4e00' <= char <= '\u9fff' or '\u3000' <= char <= '\u303f') else 1
+        if current_width + char_width > max_width:
+            break
+        result += char
+        current_width += char_width
+    return result
+
+
 class Window:
     """
     单个终端窗口
     管理一个 Shell 子进程及其相关的输入输出缓冲
     """
 
-    def __init__(self, window_id: int, title: str = None, rows: int = 24, cols: int = 80):
+    def __init__(self, window_id: int, title: str = None, rows: int = 24, cols: int = None):
         self.id = window_id
         self.title = title or f"Shell {window_id}"
         self.rows = rows
-        self.cols = cols
+        # 如果没有指定 cols，使用默认值 60（保守值，适配大多数终端）
+        self.cols = cols if cols is not None else 60
 
         # Shell 进程相关
         self.shell_process: Optional[asyncio.subprocess.Process] = None
@@ -44,7 +71,7 @@ class Window:
         self.screen_buffer: List[str] = []      # 历史输出行
         self.input_buffer: str = ""             # 当前未提交的输入行
         self.scroll_offset: int = 0             # 向上滚动的行数偏移
-        self.visible_rows: int = 20             # 可视区域行数
+        self.visible_rows: int = rows - 4       # 可视区域行数（减去标题和边框）
 
         # 状态
         self.shell_exited: bool = False
@@ -57,67 +84,65 @@ class Window:
         """添加输出回调 - 当有新输出时通知"""
         self._output_callbacks.append(callback)
 
-    async def start_shell(self, shell_cmd: str = "/bin/bash"):
+    async def start_shell(self, shell_cmd: str = None):
         """启动 Shell 子进程"""
         try:
             # 创建伪终端
             master_fd, slave_fd = pty.openpty()
 
-            # 启动子进程
+            # 启动子进程 - 使用 bash 的交互模式
+            if shell_cmd is None:
+                shell_cmd = "/bin/bash"
+
+            # 使用 preexec_fn 来创建新会话，避免进程组警告
+            import subprocess
+
             self.shell_process = await asyncio.create_subprocess_exec(
                 shell_cmd,
+                "--norc", "--noprofile",  # 不加载配置文件
                 stdin=slave_fd,
                 stdout=slave_fd,
                 stderr=slave_fd,
                 env={**os.environ, 'TERM': 'xterm-256color'},
-                close_fds=True
+                close_fds=True,
+                start_new_session=True  # 创建新会话，避免进程组警告
             )
 
             # 关闭子进程端的文件描述符
             os.close(slave_fd)
 
-            # 设置主进程端的非阻塞读取
+            # 设置为非阻塞模式
+            import fcntl
+            flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
+            fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
             self._master_fd = master_fd
-
-            # 创建 StreamReader 来读取输出
-            self.shell_reader = asyncio.StreamReader()
-            protocol = asyncio.StreamReaderProtocol(self.shell_reader)
-
-            # 将文件描述符包装为 asyncio 可读的
-            loop = asyncio.get_event_loop()
-            self._read_transport, _ = await loop.connect_read_pipe(
-                lambda: asyncio.streams.FlowControlMixin(protocol, loop),
-                os.fdopen(master_fd, 'rb', 0)
-            )
-
-            # 创建 StreamWriter 来写入输入
-            write_transport = await loop.connect_write_pipe(
-                asyncio.streams.FlowControlMixin,
-                os.fdopen(master_fd, 'wb', 0)
-            )
-            self.shell_writer = asyncio.StreamWriter(write_transport, protocol, self.shell_reader, loop)
-
             self._process_running = True
 
             # 启动读取任务
+            loop = asyncio.get_event_loop()
             self._read_task = asyncio.create_task(self._read_shell_output())
 
         except Exception as e:
+            os.close(master_fd)
             raise RuntimeError(f"启动 Shell 失败：{e}")
 
     async def _read_shell_output(self):
         """异步读取 Shell 输出"""
         buffer = ""
+        loop = asyncio.get_event_loop()
+
         try:
             while self._process_running:
                 try:
-                    # 读取数据
-                    data = await asyncio.wait_for(
-                        self.shell_reader.read(4096),
-                        timeout=0.1
+                    # 使用线程池读取数据（避免阻塞事件循环）
+                    data = await loop.run_in_executor(
+                        None,
+                        lambda: os.read(self._master_fd, 4096)
                     )
+
                     if not data:
-                        # Shell 退出
+                        # Shell 退出（EOF）
                         self.shell_exited = True
                         break
 
@@ -128,10 +153,8 @@ class Window:
                     # 按行分割处理
                     while '\n' in buffer:
                         line, buffer = buffer.split('\n', 1)
-                        if line:
-                            # 去除 ANSI 码后存储
-                            clean_line = strip_ansi(line)
-                            self.screen_buffer.append(clean_line)
+                        # 直接存储原始行（不去除 ANSI 码或 \r）
+                        self.screen_buffer.append(line)
 
                     # 通知有新的输出
                     for callback in self._output_callbacks:
@@ -140,12 +163,10 @@ class Window:
                         except:
                             pass
 
-                except asyncio.TimeoutError:
-                    await asyncio.sleep(0.01)
-                except asyncio.IncompleteReadError as e:
-                    if e.partial:
-                        text = e.partial.decode('utf-8', errors='replace')
-                        buffer += text
+                except BlockingIOError:
+                    # 没有数据，等待一下
+                    await asyncio.sleep(0.05)
+                except OSError:
                     self.shell_exited = True
                     break
 
@@ -156,10 +177,14 @@ class Window:
 
     async def write_input(self, text: str):
         """向 Shell 写入输入"""
-        if self.shell_writer and not self.shell_exited:
+        if self._process_running and not self.shell_exited and hasattr(self, '_master_fd'):
             try:
-                self.shell_writer.write(text.encode('utf-8'))
-                await self.shell_writer.drain()
+                # 直接写入文件描述符
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: os.write(self._master_fd, text.encode('utf-8'))
+                )
             except Exception as e:
                 self.shell_exited = True
 
@@ -213,8 +238,12 @@ class Window:
             except asyncio.CancelledError:
                 pass
 
-        if self.shell_writer:
-            self.shell_writer.close()
+        # 关闭 master fd
+        if hasattr(self, '_master_fd'):
+            try:
+                os.close(self._master_fd)
+            except:
+                pass
 
         if self.shell_process:
             try:
@@ -234,10 +263,17 @@ class TerminalManager:
     通过 create_agents() 方法创建 InputAgent 和 OutputAgent 子类来接入网络
     """
 
-    def __init__(self, fps: int = 10, default_rows: int = 20, default_cols: int = 80):
+    def __init__(self, fps: int = 10, default_rows: int = 20, default_cols: int = None):
         self.fps = fps
         self.default_rows = default_rows
-        self.default_cols = default_cols
+        # 如果没有指定 cols，则使用当前终端宽度
+        if default_cols is None:
+            try:
+                self.default_cols = os.get_terminal_size().columns
+            except OSError:
+                self.default_cols = 60  # 默认值
+        else:
+            self.default_cols = default_cols
 
         # 窗口管理
         self.windows: Dict[int, Window] = {}
@@ -267,6 +303,13 @@ class TerminalManager:
 
         # 消息输出回调（用于发送 info/error 消息）
         self.message_callback: Optional[Callable[[str], None]] = None
+
+        # 全局输入缓冲区 - 用户在 AVBash 层面的输入
+        self.global_input_buffer: str = ""
+
+        # 消息缓冲区 - 存储最近的控制命令反馈消息
+        self.message_buffer: List[str] = []
+        self.max_message_lines: int = 5  # 最多显示的消息行数
 
     def create_agents(self):
         """创建用于接入 Agent 网络的 InputAgent 和 OutputAgent 子类"""
@@ -346,26 +389,59 @@ class TerminalManager:
         接收输入文本，解析并处理
         支持控制命令（以 / 开头）和普通字符输入
         // 表示字面的 / 字符
+
+        注意：逐字符输入时，每个字符单独调用此方法
+        命令检查只在回车时进行
         """
-        # 处理转义：// → 特殊标记
+        # 处理转义：// → 特殊标记（用于字面的 /）
         text = text.replace("//", "\x00ESCAPED_SLASH\x00")
+
+        # 检查是否以换行符结尾（表示需要提交）
+        should_submit = text.endswith('\n')
 
         # 按行分割处理
         lines = text.split('\n')
 
-        for line in lines:
+        for i, line in enumerate(lines):
             # 恢复转义的 /
             line = line.replace("\x00ESCAPED_SLASH\x00", "/")
 
-            if line.startswith('/'):
-                # 解析命令
-                await self._execute_command(line[1:])
-            elif self.focused_window_id and self.focused_window_id in self.windows:
-                # 普通字符输入到焦点窗口
-                window = self.windows[self.focused_window_id]
-                window.input_buffer += line
-                if text.endswith('\n'):
-                    window.input_buffer += '\n'
+            # 跳过空行（通常是换行符分割产生的）
+            if not line:
+                continue
+
+            # 逐字符输入时，直接添加到缓冲区（不检查是否为命令）
+            self.global_input_buffer += line
+
+        # 回车时检查和执行命令
+        if should_submit:
+            await self._handle_submit()
+
+    def _submit_global_input(self):
+        """提交全局输入缓冲区内容到焦点窗口"""
+        if self.global_input_buffer and self.focused_window_id:
+            window = self.windows.get(self.focused_window_id)
+            if window:
+                window.input_buffer = self.global_input_buffer
+        self.global_input_buffer = ""
+
+    async def _handle_submit(self):
+        """处理回车提交：检查是否为命令或输入到 shell"""
+        if not self.global_input_buffer:
+            return
+
+        if self.global_input_buffer.startswith('/'):
+            # 控制命令：执行命令
+            command_str = self.global_input_buffer[1:]  # 去掉开头的 /
+            self.global_input_buffer = ""  # 清空缓冲区
+            await self._execute_command(command_str)
+        else:
+            # 普通输入：提交到焦点窗口的 shell
+            self._submit_global_input()
+            # 同时提交到 shell（添加换行符）
+            window = self._get_focused_window()
+            if window:
+                await window.submit_input()
 
     async def _execute_command(self, command_str: str):
         """执行控制命令"""
@@ -401,10 +477,8 @@ class TerminalManager:
     # ==================== 命令实现 ====================
 
     async def _cmd_enter(self):
-        """提交输入"""
-        window = self._get_focused_window()
-        if window:
-            await window.submit_input()
+        """提交输入 - 等同于回车"""
+        await self._handle_submit()
 
     async def _cmd_new(self, args: str):
         """创建新窗口"""
@@ -442,13 +516,11 @@ class TerminalManager:
             await self._send_info("当前没有窗口")
             return
 
-        result = ["窗口列表:"]
+        await self._send_info("窗口列表:")
         for wid, window in sorted(self.windows.items()):
             marker = "►" if wid == self.focused_window_id else " "
             last_line = window.screen_buffer[-1][:50] if window.screen_buffer else "(空)"
-            result.append(f"  {marker} [{wid}] {window.title}: {last_line}")
-
-        await self._send_info('\n'.join(result))
+            await self._send_info(f"  {marker} [{wid}] {window.title}: {last_line}")
 
     async def _cmd_scroll(self, args: str):
         """滚动窗口"""
@@ -483,12 +555,11 @@ class TerminalManager:
 
         results = window.search(args.strip())
         if results:
-            lines = [f"找到 {len(results)} 条匹配:"]
+            await self._send_info(f"找到 {len(results)} 条匹配:")
             for line_num, content in results[:10]:  # 限制显示 10 条
-                lines.append(f"  [{line_num}] {content[:60]}")
+                await self._send_info(f"  [{line_num}] {content[:60]}")
             if len(results) > 10:
-                lines.append(f"  ... 还有 {len(results) - 10} 条")
-            await self._send_info('\n'.join(lines))
+                await self._send_info(f"  ... 还有 {len(results) - 10} 条")
         else:
             await self._send_info(f"未找到匹配 '{args.strip()}' 的行")
 
@@ -524,10 +595,10 @@ class TerminalManager:
 
     async def _cmd_help(self):
         """显示帮助"""
-        lines = ["可用命令:"]
+        await self._send_info("命令列表:")
         for cmd, desc in sorted(self.commands_help.items()):
-            lines.append(f"  /{cmd:<15} {desc}")
-        await self._send_info('\n'.join(lines))
+            # 缩短每行长度
+            await self._send_info(f"  /{cmd}: {desc}")
 
     # ==================== 窗口管理 ====================
 
@@ -576,53 +647,94 @@ class TerminalManager:
     def render_windows(self) -> str:
         """
         渲染所有窗口为纯文本
-        焦点窗口显示完整内容，非焦点窗口显示摘要
+        布局顺序（从上到下）：
+        1. 其他非焦点窗口（摘要渲染）
+        2. 焦点窗口（完整渲染）
+        3. 消息显示区
+        4. 输入显示区（最底部）
         """
-        if not self.windows:
-            return "[终端] 没有活动窗口 - 使用 /new 创建窗口"
-
         result = []
 
+        # 1. 渲染非焦点窗口（顶部）
         for window_id, window in sorted(self.windows.items()):
-            if window_id == self.focused_window_id:
-                # 焦点窗口 - 完整渲染
-                rendered = self._render_focused_window(window)
-            else:
-                # 非焦点窗口 - 摘要渲染
+            if window_id != self.focused_window_id:
                 rendered = self._render_unfocused_window(window)
+                result.append(rendered)
+
+        # 2. 渲染焦点窗口（完整）
+        if self.focused_window_id and self.focused_window_id in self.windows:
+            focused_window = self.windows[self.focused_window_id]
+            rendered = self._render_focused_window(focused_window)
             result.append(rendered)
+        elif not self.windows:
+            result.append("[终端] 没有活动窗口 - 使用 /new 创建窗口")
+
+        # 3. 消息显示区 - 直接逐行添加
+        result.append("-- 消息 --")
+        if self.message_buffer:
+            for msg in self.message_buffer[-self.max_message_lines:]:
+                result.append(f"  {msg}")
+        else:
+            result.append("  (无消息)")
+
+        # 4. 输入显示区（最底部）
+        result.append(self._render_input_area())
 
         return '\n'.join(result)
 
     def _render_focused_window(self, window: Window) -> str:
         """渲染焦点窗口"""
         lines = []
-        lines.append("╔" + "═" * (window.cols - 2) + "╗")
+        inner_width = window.cols - 2  # 减去左右边框
+
+        lines.append("╔" + "═" * inner_width + "╗")
 
         # 标题栏
         title = f"► {window.title} [ID:{window.id}] "
-        title_len = len(title) + 10  # 加上 ANSI 码长度估算
-        lines.append("║" + title + " " * (window.cols - title_len - 2) + "║")
-        lines.append("╠" + "═" * (window.cols - 2) + "╣")
+        title_padded = truncate_to_width(title, inner_width)
+        title_padded = title_padded + " " * (inner_width - display_width(title_padded))
+        lines.append("║" + title_padded + "║")
+
+        lines.append("╠" + "═" * inner_width + "╣")
 
         # 历史内容
         visible = window.get_visible_content()
-        for _ in range(window.visible_rows - len(visible)):
+        # 只填充到 visible_rows 行，但不超过必要
+        while len(visible) < window.visible_rows:
             visible.append("")
 
         for line in visible[:window.visible_rows]:
-            display_line = line[:window.cols - 2] if len(line) < window.cols - 2 else line[:window.cols - 2]
-            lines.append("║" + display_line + " " * (window.cols - len(display_line) - 2) + "║")
+            # 先去除 ANSI 码
+            clean_line = strip_ansi(line)
+            # 将 tab 替换为 4 个空格
+            clean_line = clean_line.replace('\t', '    ')
+            # 处理 \r：按 \r 分割，处理覆盖逻辑
+            # 如果 \r 在中间，后面的内容覆盖前面；如果 \r 在末尾，忽略
+            parts = clean_line.split('\r')
+            # 过滤掉空字符串（\r 在末尾产生的）
+            non_empty_parts = [p for p in parts if p]
+            # 如果有多个非空部分，最后一个覆盖了前面的
+            clean_line = non_empty_parts[-1] if non_empty_parts else ""
+            # 截断到窗口宽度
+            display_line = truncate_to_width(clean_line, inner_width)
+            # 用空格填充到宽度
+            display_width_filled = display_width(display_line)
+            display_line = display_line + " " * (inner_width - display_width_filled)
+            lines.append("║" + display_line + "║")
 
         # 输入行
-        lines.append("╠" + "═" * (window.cols - 2) + "╣")
-        input_line = f"$ {window.input_buffer}"[:window.cols - 2]
-        lines.append("║" + input_line + " " * (window.cols - len(input_line) - 2) + "║")
-        lines.append("╚" + "═" * (window.cols - 2) + "╝")
+        lines.append("╠" + "═" * inner_width + "╣")
+        input_line = truncate_to_width(f"$ {window.input_buffer}", inner_width)
+        input_line = input_line + " " * (inner_width - display_width(input_line))
+        lines.append("║" + input_line + "║")
+
+        lines.append("╚" + "═" * inner_width + "╝")
 
         # 滚动指示
         if window.scroll_offset > 0:
             lines.append(f"(已向上滚动 {window.scroll_offset} 行)")
+
+        return '\n'.join(lines)
 
         return '\n'.join(lines)
 
@@ -637,15 +749,30 @@ class TerminalManager:
         ]
         return '\n'.join(lines)
 
+    def _render_input_area(self) -> str:
+        """渲染输入显示区 - 显示用户当前输入"""
+        prompt = "AVBash$ "
+        input_text = self.global_input_buffer if self.global_input_buffer else "(等待输入...)"
+        return f"{prompt}{input_text}"
+
     # ==================== 辅助方法 ====================
+
+    def _add_message(self, message: str):
+        """添加消息到缓冲区"""
+        self.message_buffer.append(message)
+        # 限制消息数量
+        if len(self.message_buffer) > self.max_message_lines:
+            self.message_buffer.pop(0)
 
     async def _send_info(self, message: str):
         """发送信息消息"""
+        self._add_message(f"[INFO] {message}")
         if self.message_callback:
             self.message_callback(f"[INFO] {message}")
 
     async def _send_error(self, message: str):
         """发送错误消息"""
+        self._add_message(f"[ERROR] {message}")
         if self.message_callback:
             self.message_callback(f"[ERROR] {message}")
 
