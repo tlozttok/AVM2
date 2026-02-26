@@ -153,7 +153,18 @@ class Window:
                     # 按行分割处理
                     while '\n' in buffer:
                         line, buffer = buffer.split('\n', 1)
-                        # 直接存储原始行（不去除 ANSI 码或 \r）
+                        # 检测是否包含 bash 提示符（表示命令已完成）
+                        clean_line = strip_ansi(line).strip()
+                        # 提示符格式通常是 "bash-X.Y$ " 或 "user@host:~$ "
+                        if clean_line.endswith('$') or (clean_line.startswith('bash') and '$' in clean_line):
+                            # 命令完成
+                            if self.last_command_status == "running":
+                                self.last_command_status = "success"
+                        # 检测错误消息
+                        elif 'error' in clean_line.lower() or 'command not found' in clean_line.lower() or 'no such file' in clean_line.lower():
+                            self.last_command_status = "error"
+
+                        # 直接存储原始行
                         self.screen_buffer.append(line)
 
                     # 通知有新的输出
@@ -192,6 +203,7 @@ class Window:
         """提交输入缓冲区内容给 Shell"""
         if self.input_buffer:
             self.last_command = self.input_buffer
+            self.last_command_status = "running"  # 假设命令开始执行
             command = self.input_buffer + "\n"
             self.input_buffer = ""
             await self.write_input(command)
@@ -740,12 +752,43 @@ class TerminalManager:
 
     def _render_unfocused_window(self, window: Window) -> str:
         """渲染非焦点窗口（摘要模式）"""
-        last_line = window.screen_buffer[-1][:50] if window.screen_buffer else "(无输出)"
-        status = "运行中" if not window.shell_exited else "已退出"
+        # 获取最后一行非提示符的输出
+        last_output = "(无输出)"
+        for line in reversed(window.screen_buffer):
+            clean = strip_ansi(line).strip()
+            # 跳过提示符行
+            if clean.endswith('$') or clean.startswith('bash'):
+                continue
+            if clean:
+                # 处理 tab 和 \r
+                clean = clean.replace('\t', '    ')
+                if clean.endswith('\r'):
+                    clean = clean[:-1]
+                else:
+                    clean = clean.split('\r')[-1]
+                last_output = clean.strip()[:50]
+                break
+
+        # 最后命令
+        last_command = window.last_command if window.last_command else "(无命令)"
+
+        # 执行状态
+        if window.shell_exited:
+            status = "已退出"
+        elif window.last_command_status == "error":
+            status = "报错"
+        elif window.last_command_status == "success":
+            status = "成功"
+        elif window.last_command_status == "running":
+            status = "运行中"
+        else:
+            status = "空闲"
 
         lines = [
-            f"[窗口 {window.id}] {window.title} - {status}",
-            f"  最后输出：{last_line}",
+            f"[窗口 {window.id}] {window.title}",
+            f"  状态：{status}",
+            f"  最后命令：{last_command}",
+            f"  最后输出：{last_output}",
         ]
         return '\n'.join(lines)
 

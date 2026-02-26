@@ -46,6 +46,10 @@ async def main():
         """消息回调"""
         pass  # 消息已经在渲染中显示
 
+    def on_message(msg):
+        """消息回调"""
+        pass  # 消息已经在渲染中显示
+
     term.set_render_callback(on_render)
     term.set_message_callback(on_message)
 
