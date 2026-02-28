@@ -721,18 +721,31 @@ class TerminalManager:
             # 将 tab 替换为 4 个空格
             clean_line = clean_line.replace('\t', '    ')
             # 处理 \r：按 \r 分割，处理覆盖逻辑
-            # 如果 \r 在中间，后面的内容覆盖前面；如果 \r 在末尾，忽略
             parts = clean_line.split('\r')
-            # 过滤掉空字符串（\r 在末尾产生的）
             non_empty_parts = [p for p in parts if p]
-            # 如果有多个非空部分，最后一个覆盖了前面的
             clean_line = non_empty_parts[-1] if non_empty_parts else ""
-            # 截断到窗口宽度
-            display_line = truncate_to_width(clean_line, inner_width)
-            # 用空格填充到宽度
-            display_width_filled = display_width(display_line)
-            display_line = display_line + " " * (inner_width - display_width_filled)
-            lines.append("║" + display_line + "║")
+
+            # 如果行太长，自动换行
+            line_width = display_width(clean_line)
+            if line_width > inner_width:
+                # 分割成多行
+                while clean_line:
+                    chunk = ""
+                    chunk_width = 0
+                    for char in clean_line:
+                        char_width = 2 if ('\u4e00' <= char <= '\u9fff' or '\u3000' <= char <= '\u303f') else 1
+                        if chunk_width + char_width > inner_width:
+                            break
+                        chunk += char
+                        chunk_width += char_width
+                    clean_line = clean_line[len(chunk):]
+                    # 填充空格
+                    display_line = chunk + " " * (inner_width - display_width(chunk))
+                    lines.append("║" + display_line + "║")
+            else:
+                # 不需要换行，直接填充
+                display_line = clean_line + " " * (inner_width - display_width(clean_line))
+                lines.append("║" + display_line + "║")
 
         # 输入行
         lines.append("╠" + "═" * inner_width + "╣")
