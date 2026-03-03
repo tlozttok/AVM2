@@ -2,7 +2,6 @@
 
 from collections import Counter
 import json
-import random
 import re
 import os
 import asyncio
@@ -71,14 +70,13 @@ class AgentSystem(Loggable):
         super().__init__()
         self.agents: Dict[str, Agent] = {}
         self.message_bus = MessageBus()
-        self.explore_agent=[]
         self.io_agents=[]
         self.frequency_monitor = FrequencyMonitor()
         self.logger.debug("频率监控器已创建")
-        
+
         # 系统运行状态
         self._system_running = False
-        
+
         self.logger.info("AgentSystem 实例已创建")
         
         
@@ -173,35 +171,6 @@ class AgentSystem(Loggable):
             self.logger.warning(f"获取代理 {agent_id} 失败，代理不存在")
         return agent
     
-    def add_explore_agent(self, agent:str):
-        self.logger.debug(f"添加探索代理: {agent}")
-        self.explore_agent.append(agent)
-        self.logger.info(f"代理 {agent} 已添加到探索列表，当前探索代理数: {len(self.explore_agent)}")
-
-    def stop_explore_agent(self, agent:str):
-        self.logger.debug(f"停止探索代理: {agent}")
-        if agent in self.explore_agent:
-            self.explore_agent.remove(agent)
-            self.logger.info(f"代理 {agent} 已从探索列表移除，当前探索代理数: {len(self.explore_agent)}")
-        else:
-            self.logger.warning(f"尝试停止不在探索列表中的代理: {agent}")
-    
-    def seek_agent(self, keyword:str):
-        self.logger.debug(f"寻找关键字 '{keyword}' 的探索代理")
-        if not self.explore_agent:
-            self.logger.warning("探索代理列表为空，无法寻找代理")
-            return None
-        agent = random.choice(self.explore_agent)
-        self.logger.info(f"为关键字 '{keyword}' 找到探索代理: {agent}")
-        return agent
-    
-    def split_agent(self, state, connection):
-        self.logger.info(f"系统级别Agent分裂，状态: {state}, 连接数: {len(connection)}")
-        new_agent=Agent()
-        new_agent.state=state
-        new_agent.input_connection=connection
-        self.add_agent(new_agent)
-        self.logger.info(f"新Agent {new_agent.id} 已创建并添加到系统")
     
     def get_frequency_stats(self, agent_id: str = None) -> dict:
         """
@@ -348,32 +317,46 @@ class Agent(Loggable):
         self.input_connection.append((id, keyword))
         self.logger.info(f"输入连接已添加，当前输入连接数: {len(self.input_connection)}")
     
-    def explore(self):
-        self.logger.info(f"开始探索模式，允许其他Agent发现")
-        self.system.add_explore_agent(self.id)
-        
-    def stop_explore(self):
-        self.logger.info(f"停止探索模式")
-        self.system.stop_explore_agent(self.id)
-    
-    def seek(self,keyword):
-        self.logger.info(f"寻找关键字 '{keyword}' 的Agent")
-        agent=self.system.seek_agent(keyword)
-        if agent is None:
-            self.logger.error(f"未找到关键字 '{keyword}' 的Agent")
-            return
-        if not (agent,keyword) in self.output_connection:
-            self.output_connection.append((keyword,agent))
-            self.logger.info(f"已建立输出连接到 {agent}")
-            
-    def split(self,state,keyword):
-        self.logger.info(f"执行Agent分裂，状态: {state}, 关键字: {keyword}")
-        splited_connection=list(filter(lambda x:x[1] == keyword,self.input_connection))
-        self.logger.debug(f"找到 {len(splited_connection)} 个需要分裂的连接")
-        self.input_connection=list(filter(lambda x:x[1] not in keyword,self.input_connection))
-        self.logger.debug(f"分裂后剩余 {len(self.input_connection)} 个输入连接")
-        self.system.split_agent(state,splited_connection)
-        self.logger.info("Agent分裂操作完成")
+
+    def set_output_connection(self, id: str, keyword: str):
+        """
+        设置输出连接
+
+        Args:
+            id: 接收者 Agent ID
+            keyword: 输出关键词
+        """
+        self.logger.debug(f"设置输出连接：接收者 {id}, 关键字 '{keyword}'")
+        self.output_connection.append((keyword, id))
+        self.logger.info(f"输出连接已添加，当前输出连接数：{len(self.output_connection)}")
+
+    def delete_output_connection_by_keyword(self, keyword: str):
+        """
+        根据关键字删除输出连接
+
+        Args:
+            keyword: 要删除的输出关键词
+        """
+        self.logger.debug(f"删除输出连接：关键字 '{keyword}'")
+        deleted_connections = list(filter(lambda x: x[0] == keyword, self.output_connection))
+        self.output_connection = list(filter(lambda x: x[0] != keyword, self.output_connection))
+        self.logger.info(f"删除了 {len(deleted_connections)} 个输出连接")
+        # 通知接收方删除对应的输入连接
+        for receiver_id, _ in deleted_connections:
+            receiver = self.system.get_agent(receiver_id)
+            if receiver:
+                receiver.delete_input_connection_by_id(self.id)
+
+    def delete_input_connection_by_id(self, sender_id: str):
+        """
+        根据发送者 ID 删除输入连接（用于 REJECT_OUTPUT 通知）
+
+        Args:
+            sender_id: 发送者 Agent ID
+        """
+        self.logger.debug(f"删除来自 {sender_id} 的输入连接")
+        self.input_connection = list(filter(lambda x: x[0] != sender_id, self.input_connection))
+
     
     def get_frequency_stats(self) -> dict:
         """
@@ -440,20 +423,14 @@ class Agent(Loggable):
         self.logger.info(f"响应处理完成: 状态更新 {state_updates} 次，处理信号 {signal_processing} 个，发送消息 {message_sending} 条")
                 
     async def process_signal(self, signals):
-        self.logger.info(f"处理信号: {signals}")
+        self.logger.info(f"处理信号：{signals}")
         try:
             signals_data = json.loads(signals)
             self.logger.debug(f"解析到 {len(signals_data)} 个信号")
             signals_data=signals_data["content"]
             for signal in signals_data:
                 signal_type=signal["type"]
-                self.logger.info(f"执行信号: {signal_type}")
-                if signal_type=="EXPLORE":
-                    self.explore()
-                if signal_type=="STOP_EXPLORE":
-                    self.stop_explore()
-                if signal_type=="SEEK":
-                    self.seek(signal["keyword"])
+                self.logger.info(f"执行信号：{signal_type}")
                 if signal_type=="REJECT_INPUT":
                     if signal.get("keyword"):
                         self.delete_input_connection(signal["keyword"])
@@ -462,12 +439,20 @@ class Agent(Loggable):
                         self.system.get_agent(signal["id"]).delete_output_connection(self.id)
                 if signal_type=="ACCEPT_INPUT":
                     self.set_input_connection(signal["id"],signal["keyword"])
-                if signal_type=="SPLIT":
-                    self.logger.info(f"执行SPLIT信号，状态: {signal['state']}, 关键字: {signal['keyword']}")
-                    self.split(signal["state"],signal["keyword"])
+                if signal_type=="SET_OUTPUT":
+                    self.set_output_connection(signal["id"], signal["keyword"])
+                if signal_type=="REJECT_OUTPUT":
+                    if signal.get("keyword"):
+                        self.delete_output_connection_by_keyword(signal["keyword"])
+                    if signal.get("id"):
+                        # 通知对应 Agent 删除输入连接
+                        sender = self.system.get_agent(signal["id"])
+                        if sender:
+                            sender.delete_input_connection_by_id(self.id)
         except Exception as e:
-            self.logger.error(f"信号处理失败: {e}")
+            self.logger.error(f"信号处理失败：{e}")
             self.logger.exception("信号处理异常详情:")
+    
     
     async def start_processing(self):
         """
