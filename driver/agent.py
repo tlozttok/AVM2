@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """
-AVM2 核心驱动模块
+AVM2 Agent 类模块
+包含核心的 Agent 类
 使用统一日志记录器 (unified_logger) 输出 JSONL 格式
 """
 
-
 from collections import Counter
 import json
-import re
 import os
+import re
 import asyncio
 import time
-from typing import List, Optional, Tuple, Dict
+from typing import List, Tuple, Dict
 import uuid
-from abc import ABC, abstractmethod
+
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-# 使用统一日志记录器
 from utils.visual_monitor.unified_logger import Loggable
-
 from utils.llm_logger import llm_logger
 from utils.frequency_calculator import ActivationFrequencyCalculator, FrequencyMonitor
-
 
 # Load environment variables
 load_dotenv()
@@ -35,186 +32,29 @@ openai_client = AsyncOpenAI(
 
 MODEL_NAME = os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
 
+# 读取预提示
 with open("driver/pre_prompt.md", "r") as f:
     pre_prompt = f.read()
 
 
-class MessageBus(Loggable):
-
-    def __init__(self):
-        super().__init__()
-        self.agents: Dict[str, 'Agent'] = {}
-        self.info("message_bus_created", {
-            "initial_agents_count": 0
-        })
-
-    def register_agent(self, agent):
-        before_count = len(self.agents)
-        self.agents[agent.id] = agent
-        after_count = len(self.agents)
-        self.info("agent_registered", {
-            "agent_id": agent.id,
-            "agents_count_before": before_count,
-            "agents_count_after": after_count
-        })
-
-    def unregister_agent(self, agent_id: str):
-        before_count = len(self.agents)
-        if agent_id in self.agents:
-            del self.agents[agent_id]
-            after_count = len(self.agents)
-            self.info("agent_unregistered", {
-                "agent_id": agent_id,
-                "agents_count_before": before_count,
-                "agents_count_after": after_count
-            })
-        else:
-            self.warning("agent_not_found_for_unregister", {
-                "agent_id": agent_id
-            })
-
-    def send_message(self, message: str, receiver_id: str, sender_id: str):
-        self.debug("message_routing", {
-            "sender_id": sender_id,
-            "receiver_id": receiver_id,
-            "message_length": len(message)
-        })
-
-        if receiver_id in self.agents:
-            self.agents[receiver_id].receive_message(message, sender_id)
-            self.info("message_delivered", {
-                "sender_id": sender_id,
-                "receiver_id": receiver_id,
-                "success": True
-            })
-        else:
-            self.error("message_delivery_failed", {
-                "sender_id": sender_id,
-                "receiver_id": receiver_id,
-                "reason": "receiver_not_registered"
-            })
-
-
-class AgentSystem(Loggable):
-
-    def __init__(self):
-        super().__init__()
-        self.agents: Dict[str, 'Agent'] = {}
-        self.message_bus = MessageBus()
-        self.io_agents = []
-        self.frequency_monitor = FrequencyMonitor()
-
-        self._system_running = False
-
-        self.info("agent_system_created", {
-            "initial_agents_count": 0
-        })
-
-    def add_agent(self, agent):
-        before_count = len(self.agents)
-        self.agents[agent.id] = agent
-        self.message_bus.register_agent(agent)
-        agent.message_bus = self.message_bus
-        agent.system = self
-
-        self.frequency_monitor.register_agent(agent.id)
-
-        after_count = len(self.agents)
-
-        if self._system_running and hasattr(agent, 'start_processing'):
-            asyncio.ensure_future(agent.start_processing())
-
-        self.info("agent_added", {
-            "agent_id": agent.id,
-            "agent_type": agent.__class__.__name__,
-            "agents_count_before": before_count,
-            "agents_count_after": after_count
-        })
-
-    def add_io_agent(self, agent):
-        self.info("io_agent_added", {
-            "agent_id": agent.id
-        })
-        self.add_agent(agent)
-        self.io_agents.append(agent)
-
-    async def start_all_input_agents(self):
-        self.info("starting_input_agents", {})
-        input_agents = [a for a in self.io_agents if isinstance(a, InputAgent)]
-        for agent in input_agents:
-            await agent.start()
-        self.info("input_agents_started", {})
-
-    async def stop_all_input_agents(self):
-        self.info("stopping_input_agents", {})
-        input_agents = [a for a in self.io_agents if isinstance(a, InputAgent)]
-        for agent in input_agents:
-            await agent.stop()
-        self.info("input_agents_stopped", {})
-
-    async def start_all_agents(self):
-        self.info("starting_all_agents", {
-            "agents_count": len(self.agents)
-        })
-        self._system_running = True
-        for agent_id, agent in self.agents.items():
-            if hasattr(agent, 'start_processing'):
-                await agent.start_processing()
-        self.info("all_agents_started", {})
-
-    async def stop_all_agents(self):
-        self.info("stopping_all_agents", {})
-        self._system_running = False
-        for agent_id, agent in self.agents.items():
-            if hasattr(agent, 'stop_processing'):
-                await agent.stop_processing()
-        self.info("all_agents_stopped", {})
-
-    def remove_agent(self, agent_id: str):
-        if agent_id in self.agents:
-            before_count = len(self.agents)
-            self.message_bus.unregister_agent(agent_id)
-            del self.agents[agent_id]
-            after_count = len(self.agents)
-
-            self.frequency_monitor.unregister_agent(agent_id)
-
-            self.info("agent_removed", {
-                "agent_id": agent_id,
-                "agents_count_before": before_count,
-                "agents_count_after": after_count
-            })
-        else:
-            self.warning("agent_not_found_for_remove", {
-                "agent_id": agent_id
-            })
-
-    def get_agent(self, agent_id: str):
-        agent = self.agents.get(agent_id)
-        return agent
-
-    def get_frequency_stats(self, agent_id: str = None) -> dict:
-        if agent_id:
-            agent = self.get_agent(agent_id)
-            if agent:
-                return agent.get_frequency_stats()
-            return None
-        else:
-            return {aid: a.get_frequency_stats() for aid, a in self.agents.items()}
-
-
 class Agent(Loggable):
-    """Agent 类 - 不可继承"""
+    """
+    Agent 类 - 核心处理单元
+
+    注意：此类不可被继承
+    """
 
     def __init__(self):
         super().__init__()
+
+        # 防止继承
         if type(self) != Agent:
             raise TypeError("Agent 类不可继承")
 
         self.id: str = str(uuid.uuid4())
         self.state: str = ""
-        self.input_connection: List[Tuple[str, str]] = []
-        self.output_connection: List[Tuple[str, str]] = []
+        self.input_connection: List[Tuple[str, str]] = []  # [(sender_id, keyword), ...]
+        self.output_connection: List[Tuple[str, str]] = []  # [(keyword, receiver_id), ...]
         self.input_queue = asyncio.Queue()
         self.message_bus = None
         self.system = None
@@ -224,6 +64,7 @@ class Agent(Loggable):
         self._processing_task = None
         self._processing_interval = 0.1
 
+        # 频率监控
         self.frequency_calculator = ActivationFrequencyCalculator(
             window_size=10,
             time_window_seconds=60.0,
@@ -231,9 +72,10 @@ class Agent(Loggable):
         )
         self.keyword_frequency_trackers: Dict[str, ActivationFrequencyCalculator] = {}
 
+        # 设置日志名称
         self.set_log_name(str(self.id))
 
-        # 记录 Agent 创建 - 用于拓扑图构建
+        # 记录 Agent 创建
         self.info("agent_created", {
             "agent_id": self.id,
             "agent_type": "Agent",
@@ -242,12 +84,15 @@ class Agent(Loggable):
         })
 
     def receive_message(self, message: str, sender: str):
+        """接收消息并加入输入队列"""
         queue_size_before = self.input_queue.qsize()
 
+        # 查找关键字
         keyword_list = [x for x in self.input_connection if x[0] == sender]
         if keyword_list:
             keyword = keyword_list[0][1]
 
+            # 为关键字创建频率追踪器
             if keyword not in self.keyword_frequency_trackers:
                 self.keyword_frequency_trackers[keyword] = ActivationFrequencyCalculator(
                     window_size=10,
@@ -262,7 +107,7 @@ class Agent(Loggable):
         self.input_queue.put_nowait((keyword, message))
         queue_size_after = self.input_queue.qsize()
 
-        # 记录消息接收 - 用于激活监控
+        # 记录消息接收
         self.info("message_received", {
             "sender": sender,
             "keyword": keyword,
@@ -271,10 +116,12 @@ class Agent(Loggable):
             "queue_size_after": queue_size_after
         })
 
-    def should_activate(self):
+    def should_activate(self) -> bool:
+        """检查是否应该激活"""
         return not self.input_queue.empty()
 
     async def send_message(self, message: str, keyword: str):
+        """通过关键字发送消息"""
         uids = [x[1] for x in self.output_connection if x[0] == keyword]
 
         if not uids:
@@ -292,6 +139,7 @@ class Agent(Loggable):
         })
 
     def delete_input_connection(self, keyword: str):
+        """删除指定关键字的输入连接"""
         deleted = [x for x in self.input_connection if x[1] == keyword]
         self.input_connection = [x for x in self.input_connection if x[1] != keyword]
 
@@ -306,6 +154,7 @@ class Agent(Loggable):
         })
 
     def delete_output_connection(self, agent_id: str):
+        """删除指定 Agent 的输出连接"""
         before = len(self.output_connection)
         self.output_connection = [x for x in self.output_connection if x[1] != agent_id]
         after = len(self.output_connection)
@@ -317,6 +166,7 @@ class Agent(Loggable):
         })
 
     def set_input_connection(self, agent_id: str, keyword: str):
+        """设置输入连接"""
         before = len(self.input_connection)
         self.input_connection.append((agent_id, keyword))
         after = len(self.input_connection)
@@ -329,6 +179,7 @@ class Agent(Loggable):
         })
 
     def set_output_connection(self, agent_id: str, keyword: str):
+        """设置输出连接"""
         before = len(self.output_connection)
         self.output_connection.append((keyword, agent_id))
         after = len(self.output_connection)
@@ -341,6 +192,7 @@ class Agent(Loggable):
         })
 
     def delete_output_connection_by_keyword(self, keyword: str):
+        """通过关键字删除输出连接"""
         deleted = [x for x in self.output_connection if x[0] == keyword]
         before = len(self.output_connection)
         self.output_connection = [x for x in self.output_connection if x[0] != keyword]
@@ -359,6 +211,7 @@ class Agent(Loggable):
                 agent.delete_input_connection_by_id(self.id)
 
     def delete_input_connection_by_id(self, sender_id: str):
+        """通过发送者 ID 删除输入连接"""
         before = len(self.input_connection)
         self.input_connection = [x for x in self.input_connection if x[0] != sender_id]
         after = len(self.input_connection)
@@ -370,9 +223,11 @@ class Agent(Loggable):
         })
 
     def get_frequency_stats(self) -> dict:
+        """获取激活频率统计"""
         return self.frequency_calculator.get_frequency_stats()
 
     def get_keyword_message_frequencies(self) -> dict:
+        """获取关键字消息频率"""
         result = {}
         for keyword, tracker in self.keyword_frequency_trackers.items():
             stats = tracker.get_frequency_stats()
@@ -384,6 +239,7 @@ class Agent(Loggable):
         return result
 
     async def process_response(self, response):
+        """解析并处理 LLM 响应"""
         pattern = re.compile(r"<(\w+)>(.*?)</\1>", re.DOTALL)
         matches = pattern.findall(response)
 
@@ -409,6 +265,7 @@ class Agent(Loggable):
         })
 
     async def process_signal(self, signals):
+        """处理信号"""
         try:
             signals_data = json.loads(signals)
             signals_data = signals_data.get("content", [])
@@ -444,6 +301,7 @@ class Agent(Loggable):
             })
 
     async def start_processing(self):
+        """开始处理循环"""
         if self._running:
             return
 
@@ -455,6 +313,7 @@ class Agent(Loggable):
         })
 
     async def stop_processing(self):
+        """停止处理循环"""
         if not self._running:
             return
 
@@ -475,6 +334,7 @@ class Agent(Loggable):
         self.info("processing_stopped", {})
 
     async def _processing_loop(self):
+        """主处理循环"""
         loop_count = 0
 
         while self._running:
@@ -518,12 +378,14 @@ class Agent(Loggable):
         })
 
     async def _process_messages_batch(self, messages):
+        """处理一批消息"""
         self.frequency_calculator.record_activation()
         frequency_stats = self.frequency_calculator.get_frequency_stats()
         keyword_frequencies = self.get_keyword_message_frequencies()
 
         output_count = Counter([x[0] for x in self.output_connection])
 
+        # 构建系统提示
         system_prompt = (
             self.pre_prompt +
             "\n<self_state>" + self.state + "</self_state>" +
@@ -575,223 +437,3 @@ class Agent(Loggable):
             })
             for msg in messages:
                 self.input_queue.put_nowait(msg)
-
-
-class OutputAgent(Loggable, ABC):
-
-    def __init__(self):
-        super().__init__()
-        self.id: str = str(uuid.uuid4())
-        self.input_connections: List[str] = []
-        self.input_queue = asyncio.Queue()
-        self.message_bus = None
-        self.system = None
-
-        self._running = False
-        self._processing_task = None
-        self._processing_interval = 0.1
-
-        self.set_log_name(str(self.id))
-
-        self.info("output_agent_created", {
-            "agent_id": self.id,
-            "agent_type": "OutputAgent"
-        })
-
-    @abstractmethod
-    def explore(self, message: str):
-        pass
-
-    def receive_message(self, message: str, sender: str):
-        if sender in self.input_connections:
-            llm_logger.log_output_agent_message(
-                agent_id=self.id,
-                message=message,
-                sender_id=sender
-            )
-
-            queue_size_before = self.input_queue.qsize()
-            self.input_queue.put_nowait((sender, message))
-            queue_size_after = self.input_queue.qsize()
-
-            self.info("message_received", {
-                "sender": sender,
-                "message_length": len(message),
-                "queue_size_before": queue_size_before,
-                "queue_size_after": queue_size_after
-            })
-        else:
-            self.warning("message_from_unknown_sender", {
-                "sender": sender
-            })
-
-    async def start_processing(self):
-        if self._running:
-            return
-
-        self._running = True
-        self._processing_task = asyncio.create_task(self._processing_loop())
-        self.info("processing_started", {})
-
-    async def stop_processing(self):
-        if not self._running:
-            return
-
-        self._running = False
-
-        try:
-            self.input_queue.put_nowait(("__STOP__", ""))
-        except:
-            pass
-
-        if self._processing_task:
-            self._processing_task.cancel()
-            try:
-                await self._processing_task
-            except asyncio.CancelledError:
-                pass
-
-        self.info("processing_stopped", {})
-
-    async def _processing_loop(self):
-        loop_count = 0
-
-        while self._running:
-            loop_count += 1
-
-            try:
-                try:
-                    message = await asyncio.wait_for(
-                        self.input_queue.get(),
-                        timeout=self._processing_interval
-                    )
-
-                    if message[0] == "__STOP__":
-                        break
-
-                    messages = [message]
-                    while not self.input_queue.empty():
-                        try:
-                            additional = self.input_queue.get_nowait()
-                            if additional[0] == "__STOP__":
-                                break
-                            messages.append(additional)
-                        except asyncio.QueueEmpty:
-                            break
-
-                    await self._process_messages_batch(messages)
-
-                except asyncio.TimeoutError:
-                    pass
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.error("processing_loop_error", {"error": str(e)})
-                await asyncio.sleep(1)
-
-        self.info("processing_loop_ended", {"total_iterations": loop_count})
-
-    async def _process_messages_batch(self, messages):
-        for sender, message in messages:
-            self.explore(message)
-            await self.execute_data(message)
-
-    @abstractmethod
-    async def execute_data(self, data: str):
-        pass
-
-
-class InputAgent(Loggable, ABC):
-
-    def __init__(self):
-        super().__init__()
-        self.id: str = str(uuid.uuid4())
-        self.message_bus = None
-        self.output_connections: List[str] = []
-        self.system = None
-        self._running = False
-        self._task = None
-
-        self.set_log_name(str(self.id))
-
-        self.info("input_agent_created", {
-            "agent_id": self.id,
-            "agent_type": "InputAgent"
-        })
-
-    @abstractmethod
-    def seek_signal(self, message: str):
-        pass
-
-    async def start(self):
-        self._running = True
-        self._task = asyncio.create_task(self._run_loop())
-        self.info("input_agent_started", {})
-
-    async def stop(self):
-        self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        self.info("input_agent_stopped", {})
-
-    async def _run_loop(self):
-        loop_count = 0
-
-        while self._running:
-            loop_count += 1
-
-            try:
-                if self.should_send_data():
-                    await self.send_collected_data()
-
-                interval = self.get_check_interval()
-                await asyncio.sleep(interval)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.error("run_loop_error", {"error": str(e)})
-                await asyncio.sleep(1)
-
-        self.info("run_loop_ended", {"total_iterations": loop_count})
-
-    def should_send_data(self) -> bool:
-        return self.has_data_to_send()
-
-    @abstractmethod
-    def has_data_to_send(self) -> bool:
-        pass
-
-    def get_check_interval(self) -> float:
-        return 0.1
-
-    async def send_collected_data(self):
-        data = self.collect_data()
-        self.seek_signal(data)
-
-        if not self.output_connections:
-            self.warning("no_output_connections", {})
-            return
-
-        llm_logger.log_input_agent_message(
-            agent_id=self.id,
-            message=data,
-            receiver_ids=self.output_connections
-        )
-
-        for receiver_id in self.output_connections:
-            self.message_bus.send_message(data, receiver_id, self.id)
-
-        self.info("data_sent", {
-            "data_length": len(data),
-            "receivers_count": len(self.output_connections)
-        })
-
-    @abstractmethod
-    def collect_data(self) -> str:
-        pass
