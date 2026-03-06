@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 统一日志记录器
-所有日志（包括 CONTENT 模式）都输出为 JSONL 格式
+所有日志都输出为 JSONL 格式
 便于 Web 可视化监控快速解析
 """
 
@@ -62,6 +62,13 @@ class UnifiedLogger:
     def _get_timestamp_us(self) -> int:
         return time.time_ns() // 1000
 
+    def _get_object_refs(self, obj: Any = None) -> Dict[str, Any]:
+        """获取对象引用信息"""
+        refs = {}
+        if obj:
+            refs['object_addr'] = hex(id(obj))
+        return refs
+
     def _collect_async_context(self) -> Dict[str, Any]:
         """收集异步框架上下文信息"""
         context = {
@@ -113,7 +120,7 @@ class UnifiedLogger:
         return context
 
     def log(self, level: str, source: str, event_type: str, data: Dict[str, Any],
-            object_refs: Optional[Dict[str, Any]] = None):
+            object_refs: Optional[Dict[str, Any]] = None, include_async: bool = False):
         """
         记录日志
 
@@ -123,6 +130,7 @@ class UnifiedLogger:
             event_type: 事件类型
             data: 事件数据
             object_refs: 对象引用信息
+            include_async: 是否包含异步上下文
         """
         entry = {
             "timestamp_us": self._get_timestamp_us(),
@@ -136,7 +144,7 @@ class UnifiedLogger:
         if self._mode.value >= LogMode.DETAIL.value:
             entry["object_refs"] = object_refs or {}
 
-        if self._mode.value >= LogMode.ARCH.value:
+        if self._mode.value >= LogMode.ARCH.value or include_async:
             entry["async_context"] = self._collect_async_context()
 
         try:
@@ -171,10 +179,11 @@ class Loggable:
         self._agent_id = name
         self._source = f"{self.__class__.__name__}.{name}"
 
-    def _log(self, level: str, event_type: str, data: Dict[str, Any]):
+    def _log(self, level: str, event_type: str, data: Dict[str, Any],
+             object_refs: Optional[Dict[str, Any]] = None, include_async: bool = False):
         """内部日志方法"""
         source = f"{self._source}" if self._agent_id else self._source
-        unified_logger.log(level, source, event_type, data)
+        unified_logger.log(level, source, event_type, data, object_refs, include_async)
 
     def info(self, event_type: str, data: Dict[str, Any]):
         self._log("info", event_type, data)
@@ -192,7 +201,15 @@ class Loggable:
         entry = dict(data)
         if exc:
             entry["exception"] = str(exc)
-        self._log("error", event_type, entry)
+        self._log("error", event_type, entry, include_async=True)
+
+    def detail(self, event_type: str, data: Dict[str, Any], object_refs: Optional[Dict[str, Any]] = None):
+        """记录程序细节日志（DETAIL 模式）"""
+        self._log("detail", event_type, data, object_refs)
+
+    def arch(self, event_type: str, data: Dict[str, Any]):
+        """记录架构还原日志（ARCH 模式）"""
+        self._log("arch", event_type, data, include_async=True)
 
 
 # 从环境变量读取日志模式
