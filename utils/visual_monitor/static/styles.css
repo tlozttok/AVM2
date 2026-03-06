@@ -1,0 +1,231 @@
+/* 基础样式 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+}
+
+/* 头部 */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+}
+
+.header h1 {
+    font-size: 1.5rem;
+    color: #e94560;
+}
+
+.connection-status {
+    color: #666;
+}
+
+.connection-status.connected {
+    color: #4ade80;
+}
+
+/* 主内容区 */
+.main-content {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 10px;
+    padding: 10px;
+    overflow: hidden;
+}
+
+/* 拓扑图区域 */
+.topology-section {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 15px;
+    overflow: hidden;
+}
+
+.topology-section h2 {
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    color: #e94560;
+}
+
+#cytoplasm {
+    width: 100%;
+    height: calc(100% - 40px);
+    background: #0f0f23;
+    border-radius: 4px;
+}
+
+/* 日志区域 */
+.logs-section {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.logs-section h2 {
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    color: #e94560;
+}
+
+.log-filters {
+    margin-bottom: 10px;
+}
+
+.filter-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    background: #0f0f23;
+    color: #eee;
+}
+
+.log-container {
+    flex: 1;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.85rem;
+}
+
+.log-entry {
+    display: grid;
+    grid-template-columns: 80px 120px 100px 1fr;
+    gap: 10px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #0f3460;
+}
+
+.log-entry:hover {
+    background: #1a1a3e;
+}
+
+.log-time {
+    color: #888;
+}
+
+.log-source {
+    color: #60a5fa;
+}
+
+.log-event {
+    color: #f472b6;
+}
+
+.log-message {
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Agent 面板 */
+.agent-panel {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    gap: 10px;
+    padding: 10px 20px;
+    background: #16213e;
+    border-top: 1px solid #0f3460;
+    height: 200px;
+}
+
+.agent-list {
+    border-right: 1px solid #0f3460;
+    overflow-y: auto;
+}
+
+.agent-list h2 {
+    font-size: 1rem;
+    margin-bottom: 10px;
+    color: #e94560;
+}
+
+.agent-list ul {
+    list-style: none;
+}
+
+.agent-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #0f3460;
+}
+
+.agent-list li:hover {
+    background: #1a1a3e;
+}
+
+.agent-list li.selected {
+    background: #0f3460;
+}
+
+.agent-id {
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.agent-type {
+    color: #888;
+    font-size: 0.8rem;
+}
+
+/* Agent 详情 */
+.agent-detail {
+    padding: 10px 20px;
+}
+
+.agent-detail h2 {
+    font-size: 1rem;
+    margin-bottom: 10px;
+    color: #e94560;
+}
+
+.detail-content p {
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+.detail-content strong {
+    color: #60a5fa;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0f0f23;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #0f3460;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #1e4a80;
+}

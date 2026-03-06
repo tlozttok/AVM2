@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVM2 可视化监控</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部栏 -->
+        <header class="header">
+            <h1>AVM2 可视化监控</h1>
+            <div class="header-controls">
+                <span class="connection-status" :class="{ connected: isConnected }">
+                    {{ isConnected ? '● 已连接' : '○ 未连接' }}
+                </span>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 网络拓扑图 -->
+            <div class="topology-section">
+                <h2>网络拓扑</h2>
+                <div id="cytoplasm"></div>
+            </div>
+
+            <!-- 日志流 -->
+            <div class="logs-section">
+                <h2>实时日志</h2>
+                <div class="log-filters">
+                    <input v-model="logFilter" type="text" placeholder="过滤日志..." class="filter-input">
+                </div>
+                <div class="log-container" ref="logContainer">
+                    <div v-for="(log, index) in filteredLogs" :key="index"
+                         class="log-entry" :class="'level-' + log.level">
+                        <span class="log-time">{{ formatTime(log.timestamp_us) }}</span>
+                        <span class="log-source">{{ log.source }}</span>
+                        <span class="log-event">{{ log.event_type }}</span>
+                        <span class="log-message">{{ formatLogData(log.data) }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agent 列表面板和详情 -->
+        <div class="agent-panel">
+            <div class="agent-list">
+                <h2>Agent 列表 ({{ agents.length }})</h2>
+                <ul>
+                    <li v-for="agent in agents" :key="agent.id"
+                        @click="selectAgent(agent)"
+                        :class="{ selected: selectedAgent?.id === agent.id }">
+                        <span class="agent-id">{{ truncateId(agent.id) }}</span>
+                        <span class="agent-type">{{ agent.type }}</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="agent-detail" v-if="selectedAgent">
+                <h2>Agent 详情</h2>
+                <div class="detail-content">
+                    <p><strong>ID:</strong> {{ selectedAgent.id }}</p>
+                    <p><strong>类型:</strong> {{ selectedAgent.type }}</p>
+                    <p><strong>地址:</strong> {{ selectedAgent.object_addr }}</p>
+                    <p><strong>消息数:</strong> {{ selectedAgent.message_count }}</p>
+                    <p><strong>输入连接:</strong> {{ selectedAgent.input_connections.join(', ') || '无' }}</p>
+                    <p><strong>输出连接:</strong> {{ selectedAgent.output_connections.join(', ') || '无' }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
