@@ -6,7 +6,7 @@
 
 import asyncio
 from typing import List, Optional
-from driver.driver import InputAgent, OutputAgent
+from driver.i_o_agent import InputAgent, OutputAgent
 
 
 class TerminalInputAgent(InputAgent):
@@ -123,7 +123,7 @@ class TerminalPair:
 
 async def main():
     """示例：如何将终端接入 Agent 网络"""
-    from driver.driver import AgentSystem
+    from driver.agent_system import AgentSystem
 
     # 创建终端对
     terminal_pair = TerminalPair(fps=10)
