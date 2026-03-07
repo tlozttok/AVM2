@@ -9,7 +9,7 @@ TEST 标签用于阻断 AVBash 输出，防止网络激活
 """
 
 import asyncio
-from driver.driver import AgentSystem
+from driver.agent_system import AgentSystem
 from driver.net import AgentNetwork
 from AVBash.terminal_agents import TerminalPair
 
