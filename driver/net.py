@@ -7,7 +7,9 @@ Agent 网络管理类
 import random
 from typing import List, Dict, Optional, Tuple
 
-from driver.driver import Agent, AgentSystem, InputAgent, OutputAgent
+from driver.agent import Agent
+from driver.agent_system import AgentSystem, MessageBus
+from driver.i_o_agent import InputAgent, OutputAgent
 
 
 class AgentNetwork:

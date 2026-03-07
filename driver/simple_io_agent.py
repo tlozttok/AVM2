@@ -9,7 +9,7 @@ import asyncio
 import uuid
 from typing import List
 from abc import ABC, abstractmethod
-from .driver import InputAgent, OutputAgent
+from .i_o_agent import InputAgent, OutputAgent
 
 
 class UserInputAgent(InputAgent):
