@@ -121,7 +121,7 @@ class Agent(Loggable):
         return not self.input_queue.empty()
 
     async def send_message(self, message: str, keyword: str):
-        """通过关键字发送消息"""
+        """通过关键字发送消息（支持全局控制）"""
         uids = [x[1] for x in self.output_connection if x[0] == keyword]
 
         if not uids:
@@ -130,8 +130,12 @@ class Agent(Loggable):
             })
             return
 
+        # 等待系统恢复（如果暂停）
+        while self.system and self.system.is_paused():
+            await asyncio.sleep(0.1)
+
         for uid in uids:
-            self.message_bus.send_message(message, uid, self.id)
+            await self.message_bus.send_message(message, uid, self.id)
 
         self.info("message_sent", {
             "keyword": keyword,

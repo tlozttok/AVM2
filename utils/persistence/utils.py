@@ -6,7 +6,7 @@
 import asyncio
 from typing import Optional
 from .checkpoint_manager import CheckpointManager
-from driver.driver import AgentSystem
+from driver.agent_system import AgentSystem
 from utils.logger import LoggerFactory
 
 

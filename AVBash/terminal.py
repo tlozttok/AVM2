@@ -11,6 +11,8 @@ import re
 import time
 from typing import Optional, Callable, Dict, List
 
+from utils.logger import LoggerFactory
+
 
 # ANSI 转义码正则表达式
 ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -60,6 +62,10 @@ class Window:
         # 如果没有指定 cols，使用默认值 60（保守值，适配大多数终端）
         self.cols = cols if cols is not None else 60
 
+        # Logger
+        self.logger = LoggerFactory.get_logger(f"Window-{window_id}")
+        self.logger.info(f"窗口 {window_id} 初始化完成，标题: {self.title}")
+
         # Shell 进程相关
         self.shell_process: Optional[asyncio.subprocess.Process] = None
         self.shell_reader: Optional[asyncio.StreamReader] = None
@@ -87,6 +93,7 @@ class Window:
     async def start_shell(self, shell_cmd: str = None):
         """启动 Shell 子进程"""
         try:
+            self.logger.info(f"启动 Shell: {shell_cmd or '/bin/bash'}")
             # 创建伪终端
             master_fd, slave_fd = pty.openpty()
 
@@ -123,8 +130,11 @@ class Window:
             loop = asyncio.get_event_loop()
             self._read_task = asyncio.create_task(self._read_shell_output())
 
+            self.logger.info(f"Shell 进程启动成功，PID: {self.shell_process.pid}")
+
         except Exception as e:
             os.close(master_fd)
+            self.logger.error(f"启动 Shell 失败: {e}")
             raise RuntimeError(f"启动 Shell 失败：{e}")
 
     async def _read_shell_output(self):
@@ -179,11 +189,14 @@ class Window:
                     await asyncio.sleep(0.05)
                 except OSError:
                     self.shell_exited = True
+                    self.logger.debug(f"窗口 {self.id} Shell 输出读取遇到 OSError")
                     break
 
         except asyncio.CancelledError:
+            self.logger.debug(f"窗口 {self.id} 读取任务被取消")
             pass
         except Exception as e:
+            self.logger.error(f"窗口 {self.id} 读取 Shell 输出时出错: {e}")
             self.shell_exited = True
 
     async def write_input(self, text: str):
@@ -196,7 +209,9 @@ class Window:
                     None,
                     lambda: os.write(self._master_fd, text.encode('utf-8'))
                 )
+                self.logger.debug(f"向 Shell 写入输入: {repr(text[:50])}")
             except Exception as e:
+                self.logger.error(f"写入 Shell 输入失败: {e}")
                 self.shell_exited = True
 
     async def submit_input(self):
@@ -206,6 +221,7 @@ class Window:
             self.last_command_status = "running"  # 假设命令开始执行
             command = self.input_buffer + "\n"
             self.input_buffer = ""
+            self.logger.debug(f"提交命令: {repr(self.last_command[:50])}")
             await self.write_input(command)
 
     def get_visible_content(self) -> List[str]:
@@ -241,6 +257,7 @@ class Window:
 
     async def cleanup(self):
         """清理资源"""
+        self.logger.info(f"窗口 {self.id} 开始清理资源")
         self._process_running = False
 
         if self._read_task:
@@ -261,9 +278,11 @@ class Window:
             try:
                 self.shell_process.terminate()
                 await asyncio.wait_for(self.shell_process.wait(), timeout=2.0)
+                self.logger.info(f"窗口 {self.id} Shell 进程已终止")
             except Exception:
                 try:
                     self.shell_process.kill()
+                    self.logger.info(f"窗口 {self.id} Shell 进程已被强制终止")
                 except:
                     pass
 
@@ -276,6 +295,9 @@ class TerminalManager:
     """
 
     def __init__(self, fps: int = 10, default_rows: int = 20, default_cols: int = None):
+        self.logger = LoggerFactory.get_logger("TerminalManager")
+        self.logger.info(f"TerminalManager 初始化，FPS: {fps}, 默认行数: {default_rows}")
+
         self.fps = fps
         self.default_rows = default_rows
         # 如果没有指定 cols，则使用当前终端宽度
@@ -341,6 +363,7 @@ class TerminalManager:
 
     async def start(self):
         """启动终端管理器"""
+        self.logger.info("TerminalManager 启动中...")
         self._running = True
 
         # 创建第一个默认窗口
@@ -348,9 +371,11 @@ class TerminalManager:
 
         # 启动渲染任务
         self._render_task = asyncio.create_task(self._render_loop())
+        self.logger.info("TerminalManager 启动完成，渲染任务已启动")
 
     async def stop(self):
         """停止终端管理器，清理所有资源"""
+        self.logger.info("TerminalManager 停止中...")
         self._running = False
 
         if self._render_task:
@@ -361,11 +386,13 @@ class TerminalManager:
                 pass
 
         # 清理所有窗口
+        self.logger.info(f"清理 {len(self.windows)} 个窗口...")
         for window in list(self.windows.values()):
             await window.cleanup()
 
         self.windows.clear()
         self.focused_window_id = None
+        self.logger.info("TerminalManager 已停止")
 
     async def _render_loop(self):
         """定时渲染循环"""
@@ -405,6 +432,7 @@ class TerminalManager:
         注意：逐字符输入时，每个字符单独调用此方法
         命令检查只在回车时进行
         """
+        self.logger.debug(f"接收输入: {repr(text[:50])}...")
         # 处理转义：// → 特殊标记（用于字面的 /）
         text = text.replace("//", "\x00ESCAPED_SLASH\x00")
 
@@ -457,6 +485,7 @@ class TerminalManager:
 
     async def _execute_command(self, command_str: str):
         """执行控制命令"""
+        self.logger.info(f"执行控制命令: {command_str}")
         parts = command_str.strip().split(maxsplit=1)
         if not parts:
             return
@@ -482,8 +511,10 @@ class TerminalManager:
             try:
                 await handler()
             except Exception as e:
+                self.logger.error(f"命令 '{cmd}' 执行失败: {e}")
                 await self._send_error(f"命令 '{cmd}' 执行失败：{e}")
         else:
+            self.logger.warning(f"未知命令: {cmd}")
             await self._send_error(f"未知命令：{cmd}")
 
     # ==================== 命令实现 ====================
@@ -515,9 +546,12 @@ class TerminalManager:
         try:
             window_id = int(args.strip())
             if window_id in self.windows:
+                old_focus = self.focused_window_id
                 self.focused_window_id = window_id
                 self.windows[window_id].scroll_offset = 0
+                self.logger.info(f"焦点从窗口 {old_focus} 切换到窗口 {window_id}")
             else:
+                self.logger.warning(f"尝试切换到不存在的窗口: {window_id}")
                 await self._send_error(f"窗口 {window_id} 不存在")
         except ValueError:
             await self._send_error(f"无效的窗口 ID: {args}")
@@ -619,14 +653,17 @@ class TerminalManager:
         window_id = self.next_window_id
         self.next_window_id += 1
 
+        self.logger.info(f"创建新窗口 {window_id}, 标题: {title or '默认'}")
         window = Window(window_id, title, self.default_rows, self.default_cols)
 
         try:
             await window.start_shell()
             self.windows[window_id] = window
             self.focused_window_id = window_id
+            self.logger.info(f"窗口 {window_id} 创建成功")
             return window
         except Exception as e:
+            self.logger.error(f"创建窗口 {window_id} 失败: {e}")
             await self._send_error(f"创建窗口失败：{e}")
             self.next_window_id -= 1
             return None
@@ -634,9 +671,11 @@ class TerminalManager:
     async def _close_window(self, window_id: int):
         """关闭窗口"""
         if window_id not in self.windows:
+            self.logger.warning(f"尝试关闭不存在的窗口: {window_id}")
             await self._send_error(f"窗口 {window_id} 不存在")
             return
 
+        self.logger.info(f"关闭窗口 {window_id}")
         window = self.windows[window_id]
         await window.cleanup()
         del self.windows[window_id]
@@ -645,8 +684,10 @@ class TerminalManager:
         if self.focused_window_id == window_id:
             if self.windows:
                 self.focused_window_id = next(iter(self.windows.keys()))
+                self.logger.info(f"焦点切换到窗口 {self.focused_window_id}")
             else:
                 self.focused_window_id = None
+                self.logger.info("无剩余窗口，焦点置空")
 
     def _get_focused_window(self) -> Optional[Window]:
         """获取焦点窗口"""

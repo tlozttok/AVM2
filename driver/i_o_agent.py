@@ -249,7 +249,7 @@ class InputAgent(InputOutputAgent, ABC):
         )
 
         for receiver_id in self.output_connections:
-            self.message_bus.send_message(data, receiver_id, self.id)
+            await self.message_bus.send_message(data, receiver_id, self.id)
 
         self.info("data_sent", {
             "data_length": len(data),

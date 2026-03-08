@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Set
 import websockets
 from websockets.server import WebSocketServerProtocol
+from websockets.http11 import Response
+from websockets.datastructures import Headers
 from http import HTTPStatus
 
 from .log_monitor import LogMonitor, get_monitor
@@ -35,7 +37,7 @@ class MonitorServer:
         self.static_dir = Path(__file__).parent / "static"
         self.template_dir = Path(__file__).parent / "templates"
 
-    async def handle_connection(self, websocket: WebSocketServerProtocol, path: str = None):
+    async def handle_connection(self, websocket: WebSocketServerProtocol):
         """处理 WebSocket 连接"""
         self.connections.add(websocket)
         client_addr = websocket.remote_address
@@ -199,18 +201,25 @@ class MonitorServer:
         print(f"Starting WebSocket server on ws://{self.host}:{self.port}")
         print(f"HTTP server available at http://{self.host}:{self.port}")
 
-        # 创建 WebSocket 服务器
+        # 创建 WebSocket 服务器 - websockets 16.0+ 使用方式
+        import functools
         ws_server = await websockets.serve(
             self.handle_connection,
             self.host,
             self.port,
-            process_request=self.process_http_request
+            process_request=functools.partial(self._process_request_wrapper)
         )
 
         await asyncio.Future()  # 运行直到取消
 
-    async def process_http_request(self, path, request_headers):
-        """处理 HTTP 请求，返回静态文件"""
+    async def _process_request_wrapper(self, connection, request_headers):
+        """包装 process_http_request 以适配 websockets 16.0+ API"""
+        # 从 connection 对象获取请求路径
+        path = connection.request.path if hasattr(connection, 'request') else '/'
+        return await self.process_http_request(path, request_headers)
+
+    async def process_http_request(self, path: str, request_headers):
+        """处理 HTTP 请求，返回静态文件 - websockets 16.0+ 兼容版本"""
         # 解析路径
         if path == '/':
             file_path = self.template_dir / "index.html"
@@ -225,14 +234,30 @@ class MonitorServer:
             with open(file_path, 'rb') as f:
                 content = f.read()
 
-            headers = [
-                ("Content-Type", mime_type),
-                ("Content-Length", str(len(content))),
-            ]
-            return (HTTPStatus.OK, headers, content)
+            # websockets 16.0+ 要求 headers 使用 Headers 对象
+            headers = Headers()
+            headers["Content-Type"] = mime_type
+            headers["Content-Length"] = str(len(content))
+
+            return Response(
+                status_code=HTTPStatus.OK,
+                reason_phrase="OK",
+                headers=headers,
+                body=content
+            )
 
         # 返回 404
-        return (HTTPStatus.NOT_FOUND, [], b"404 Not Found")
+        content = b"404 Not Found"
+        headers = Headers()
+        headers["Content-Type"] = "text/plain"
+        headers["Content-Length"] = str(len(content))
+
+        return Response(
+            status_code=HTTPStatus.NOT_FOUND,
+            reason_phrase="Not Found",
+            headers=headers,
+            body=content
+        )
 
     def stop(self):
         """停止服务器"""

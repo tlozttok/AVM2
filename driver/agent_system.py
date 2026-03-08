@@ -6,7 +6,7 @@ AVM2 Agent 系统模块
 """
 
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional
 from utils.visual_monitor.unified_logger import Loggable
 
 
@@ -16,6 +16,12 @@ class MessageBus(Loggable):
     def __init__(self):
         super().__init__()
         self.agents: Dict[str, 'Agent'] = {}
+
+        # 全局控制
+        self._message_paused = False      # 消息暂停标志
+        self._message_delay = 0.0         # 消息延迟（秒）
+        self._control_lock = asyncio.Lock()  # 控制锁
+
         self.info("message_bus_created", {
             "initial_agents_count": 0
         })
@@ -47,8 +53,21 @@ class MessageBus(Loggable):
                 "agent_id": agent_id
             })
 
-    def send_message(self, message: str, receiver_id: str, sender_id: str):
-        """发送消息到指定 Agent"""
+    async def send_message(self, message: str, receiver_id: str, sender_id: str):
+        """
+        发送消息到指定 Agent（支持全局控制）
+
+        - 如果网络暂停，会阻塞等待恢复
+        - 如果设置了延迟，会等待指定时间
+        """
+        # 检查是否暂停 - 等待恢复
+        while self._message_paused:
+            await asyncio.sleep(0.1)
+
+        # 应用延迟
+        if self._message_delay > 0:
+            await asyncio.sleep(self._message_delay)
+
         self.debug("message_routing", {
             "sender_id": sender_id,
             "receiver_id": receiver_id,
@@ -68,6 +87,53 @@ class MessageBus(Loggable):
                 "receiver_id": receiver_id,
                 "reason": "receiver_not_registered"
             })
+
+    # ==================== 全局控制方法 ====================
+
+    def pause_messages(self):
+        """暂停消息传递"""
+        self._message_paused = True
+        self.info("messages_paused", {})
+
+    def resume_messages(self):
+        """恢复消息传递"""
+        self._message_paused = False
+        self.info("messages_resumed", {})
+
+    def set_message_delay(self, seconds: float):
+        """
+        设置消息延迟（秒）
+
+        Args:
+            seconds: 延迟秒数，0 表示无延迟
+        """
+        self._message_delay = max(0.0, seconds)
+        self.info("message_delay_set", {
+            "delay_seconds": seconds
+        })
+
+    def is_message_paused(self) -> bool:
+        """检查消息是否暂停"""
+        return self._message_paused
+
+    def get_message_delay(self) -> float:
+        """获取当前消息延迟"""
+        return self._message_delay
+
+    def set_speed_factor(self, factor: float):
+        """
+        设置速度因子
+
+        Args:
+            factor: 速度因子 (1.0=正常，0.5=半速，0.1=慢速)
+        """
+        factor = max(0.0, min(1.0, factor))  # 限制在 0-1 范围
+        # 速度因子与延迟成反比：factor=0.1 时 delay=0.9
+        self._message_delay = (1.0 - factor) * 1.0
+        self.info("speed_factor_set", {
+            "factor": factor,
+            "delay": self._message_delay
+        })
 
 
 class AgentSystem(Loggable):
@@ -186,6 +252,49 @@ class AgentSystem(Loggable):
             return None
         else:
             return {aid: a.get_frequency_stats() for aid, a in self.agents.items()}
+
+    # ==================== 全局控制便捷方法 ====================
+
+    def pause(self):
+        """暂停网络活动"""
+        self.message_bus.pause_messages()
+        self.info("system_paused", {})
+
+    def resume(self):
+        """恢复网络活动"""
+        self.message_bus.resume_messages()
+        self.info("system_resumed", {})
+
+    def set_speed(self, factor: float):
+        """
+        设置网络速度因子
+
+        Args:
+            factor: 速度因子 (1.0=正常，0.5=半速，0.1=慢速，0.0=完全暂停)
+        """
+        if factor <= 0:
+            self.pause()
+        else:
+            if self.message_bus.is_message_paused():
+                self.resume()
+            self.message_bus.set_speed_factor(factor)
+        self.info("system_speed_set", {
+            "factor": factor
+        })
+
+    def is_paused(self) -> bool:
+        """检查系统是否暂停"""
+        return self.message_bus.is_message_paused()
+
+    def get_status(self) -> dict:
+        """获取系统状态"""
+        return {
+            'paused': self.message_bus.is_message_paused(),
+            'delay': self.message_bus.get_message_delay(),
+            'agent_count': len(self.agents),
+            'io_agent_count': len(self.io_agents),
+            'running': self._system_running
+        }
 
 
 # 延迟导入避免循环依赖

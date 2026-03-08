@@ -8,6 +8,7 @@ import random
 from typing import List, Dict, Optional, Tuple
 
 from driver.agent import Agent
+from utils.logger import LoggerFactory
 from driver.agent_system import AgentSystem, MessageBus
 from driver.i_o_agent import InputAgent, OutputAgent
 
@@ -26,6 +27,9 @@ class AgentNetwork:
         Args:
             system: AgentSystem 实例，用于添加和管理 Agent
         """
+        self.logger = LoggerFactory.get_logger("AgentNetwork")
+        self.logger.info("AgentNetwork 初始化")
+
         self.system = system
         self.agents: List[Agent] = []
         self.input_agents: List[InputAgent] = []
@@ -48,6 +52,7 @@ class AgentNetwork:
         Returns:
             创建的所有 Agent 列表
         """
+        self.logger.info(f"创建网络，Agent 数量: {num_agents}")
         self.agents = []
 
         # 创建 Agent 实例
@@ -63,6 +68,7 @@ class AgentNetwork:
         # 随机初始化连接（占位实现）
         self._random_initialize_connections()
 
+        self.logger.info(f"网络创建完成，共 {len(self.agents)} 个 Agent")
         return self.agents
 
     def _random_initialize_connections(self) -> None:
@@ -72,9 +78,11 @@ class AgentNetwork:
         此方法为临时实现，后续将被更智能的连接算法替代
         """
         if len(self.agents) < 2:
+            self.logger.debug("Agent 数量少于 2，跳过连接初始化")
             return
 
         # 每个 Agent 随机连接到其他 1-3 个 Agent
+        connection_count = 0
         for agent in self.agents:
             # 随机选择目标 Agent（排除自己）
             possible_targets = [a for a in self.agents if a.id != agent.id]
@@ -94,6 +102,10 @@ class AgentNetwork:
                 # 记录连接关系
                 self.output_connections[agent.id].append((keyword, target.id))
                 self.input_connections[target.id].append((agent.id, keyword))
+                connection_count += 1
+                self.logger.debug(f"连接: {agent.id[:8]} -> {target.id[:8]} (关键字: {keyword})")
+
+        self.logger.info(f"随机初始化连接完成，共 {connection_count} 个连接")
 
     def _generate_random_keyword(self) -> str:
         """
@@ -119,16 +131,19 @@ class AgentNetwork:
             连接到的 Agent，如果连接失败则返回 None
         """
         if not self.agents:
+            self.logger.warning("尝试连接 I/O Agent 但网络中没有 Agent")
             return None
 
         # 随机选择一个 Agent
         target_agent = random.choice(self.agents)
+        agent_type = type(io_agent).__name__
 
         if isinstance(io_agent, InputAgent):
             # InputAgent 向网络发送数据，需要设置输出连接到目标 Agent
             io_agent.output_connections.append(target_agent.id)
             target_agent.set_input_connection(io_agent.id, f"io_input_{io_agent.id[:8]}")
             self.input_agents.append(io_agent)
+            self.logger.info(f"InputAgent {io_agent.id[:8]} 连接到 Agent {target_agent.id[:8]}")
 
         elif isinstance(io_agent, OutputAgent):
             # OutputAgent 接收网络数据，需要设置输入连接从目标 Agent 接收
@@ -136,6 +151,7 @@ class AgentNetwork:
             target_agent.set_output_connection(io_agent.id, keyword)
             io_agent.input_connections.append(target_agent.id)
             self.output_agents.append(io_agent)
+            self.logger.info(f"OutputAgent {io_agent.id[:8]} 连接到 Agent {target_agent.id[:8]}")
 
         return target_agent
 
@@ -157,17 +173,20 @@ class AgentNetwork:
         result = {'input': [], 'output': []}
 
         if input_agents:
+            self.logger.info(f"批量连接 {len(input_agents)} 个 InputAgent...")
             for io_agent in input_agents:
                 agent = self.connect_io_agent(io_agent)
                 if agent:
                     result['input'].append(agent)
 
         if output_agents:
+            self.logger.info(f"批量连接 {len(output_agents)} 个 OutputAgent...")
             for io_agent in output_agents:
                 agent = self.connect_io_agent(io_agent)
                 if agent:
                     result['output'].append(agent)
 
+        self.logger.info(f"批量连接完成: Input={len(result['input'])}, Output={len(result['output'])}")
         return result
 
     def get_agent(self, agent_id: str) -> Optional[Agent]:
@@ -218,8 +237,10 @@ class AgentNetwork:
 
         注意：此方法只清空网络类的引用，不会从 AgentSystem 中移除 Agent
         """
+        self.logger.info("清空 AgentNetwork 连接")
         self.agents.clear()
         self.input_agents.clear()
         self.output_agents.clear()
         self.input_connections.clear()
         self.output_connections.clear()
+        self.logger.info("AgentNetwork 已清空")

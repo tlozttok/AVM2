@@ -6,7 +6,9 @@
 
 import asyncio
 from typing import List, Optional
+
 from driver.i_o_agent import InputAgent, OutputAgent
+from utils.logger import LoggerFactory
 
 
 class TerminalInputAgent(InputAgent):
@@ -21,6 +23,10 @@ class TerminalInputAgent(InputAgent):
         self._last_render: str = ""
         self._render_dirty: bool = False
 
+        # Logger
+        self.logger = LoggerFactory.get_logger("TerminalInputAgent")
+        self.logger.info(f"TerminalInputAgent 初始化完成，ID: {self.id}")
+
         # 设置终端的渲染回调，当渲染更新时标记 dirty
         self.terminal.set_render_callback(self._on_render_update)
 
@@ -28,6 +34,7 @@ class TerminalInputAgent(InputAgent):
         """终端渲染更新回调"""
         self._last_render = render_text
         self._render_dirty = True
+        self.logger.debug(f"收到渲染更新，长度: {len(render_text)}")
 
     def seek_signal(self, message: str):
         """根据 message 决定是否进行 seek - 终端被动输出，不主动 seek"""
@@ -41,6 +48,7 @@ class TerminalInputAgent(InputAgent):
         """收集渲染数据并重置 dirty 标志"""
         if self._render_dirty:
             self._render_dirty = False
+            self.logger.debug(f"收集数据，长度: {len(self._last_render)}")
             return self._last_render
         return ""
 
@@ -60,6 +68,10 @@ class TerminalOutputAgent(OutputAgent):
         self.terminal = terminal_manager
         self._input_queue: asyncio.Queue = asyncio.Queue()
 
+        # Logger
+        self.logger = LoggerFactory.get_logger("TerminalOutputAgent")
+        self.logger.info(f"TerminalOutputAgent 初始化完成，ID: {self.id}")
+
     def explore(self, message: str):
         """根据 message 决定是否探索 - 终端不主动探索"""
         pass
@@ -69,6 +81,7 @@ class TerminalOutputAgent(OutputAgent):
         执行接收到的数据
         data 包含来自其他 Agent 的输入字符和控制命令
         """
+        self.logger.debug(f"执行数据: {repr(data[:50])}...")
         await self.terminal.feed_input(data)
 
     async def send_message(self, message: str):
@@ -76,6 +89,7 @@ class TerminalOutputAgent(OutputAgent):
         便捷方法：直接发送命令到终端
         等效于 execute_data，但由外部直接调用
         """
+        self.logger.info(f"发送消息到终端: {repr(message[:50])}...")
         await self.terminal.feed_input(message)
 
 
@@ -88,6 +102,9 @@ class TerminalPair:
     def __init__(self, fps: int = 10, default_rows: int = 20, default_cols: int = 80):
         from AVBash.terminal import TerminalManager
 
+        self.logger = LoggerFactory.get_logger("TerminalPair")
+        self.logger.info(f"TerminalPair 初始化，FPS: {fps}")
+
         self.terminal = TerminalManager(fps, default_rows, default_cols)
         self.input_agent: Optional[TerminalInputAgent] = None
         self.output_agent: Optional[TerminalOutputAgent] = None
@@ -96,18 +113,24 @@ class TerminalPair:
         """创建并返回 InputAgent 和 OutputAgent"""
         self.input_agent = TerminalInputAgent(self.terminal)
         self.output_agent = TerminalOutputAgent(self.terminal)
+        self.logger.info(f"创建 Agents: Input={self.input_agent.id}, Output={self.output_agent.id}")
         return self.input_agent, self.output_agent
 
     async def start(self):
         """启动终端管理器"""
+        self.logger.info("TerminalPair 启动...")
         await self.terminal.start()
+        self.logger.info("TerminalPair 启动完成")
 
     async def stop(self):
         """停止终端管理器"""
+        self.logger.info("TerminalPair 停止中...")
         await self.terminal.stop()
+        self.logger.info("TerminalPair 已停止")
 
     async def send_command(self, command: str):
         """便捷方法：直接发送命令到终端"""
+        self.logger.debug(f"发送命令: {repr(command[:50])}...")
         await self.terminal.feed_input(command)
 
     def set_render_callback(self, callback):
