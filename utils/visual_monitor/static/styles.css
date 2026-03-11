@@ -144,10 +144,8 @@ body {
     display: grid;
     grid-template-columns: 250px 1fr;
     gap: 10px;
-    padding: 10px 20px;
-    background: #16213e;
-    border-top: 1px solid #0f3460;
-    height: 200px;
+    height: 100%;
+    overflow: hidden;
 }
 
 .agent-list {
@@ -228,4 +226,95 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #1e4a80;
+}
+
+/* 底部面板容器 */
+.bottom-panels {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 10px;
+    padding: 10px 20px;
+    background: #16213e;
+    border-top: 1px solid #0f3460;
+    height: 220px;
+}
+
+/* 异步活动监控面板 */
+.async-panel {
+    background: #0f0f23;
+    border-radius: 8px;
+    padding: 15px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.async-panel h2 {
+    font-size: 1rem;
+    margin-bottom: 10px;
+    color: #e94560;
+}
+
+.async-panel h3 {
+    font-size: 0.9rem;
+    margin: 10px 0 8px;
+    color: #60a5fa;
+}
+
+.async-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat-label {
+    color: #888;
+}
+
+.stat-value {
+    color: #eee;
+    font-family: monospace;
+}
+
+.stat-value.status-running {
+    color: #4ade80;
+}
+
+.task-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.task-list ul {
+    list-style: none;
+}
+
+.task-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+    border-bottom: 1px solid #1a1a3e;
+    font-size: 0.8rem;
+}
+
+.task-list li:hover {
+    background: #1a1a3e;
+}
+
+.task-name {
+    color: #f472b6;
+    font-family: monospace;
+}
+
+.coro-name {
+    color: #888;
+    font-size: 0.75rem;
 }

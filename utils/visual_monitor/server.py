@@ -48,7 +48,9 @@ class MonitorServer:
             await websocket.send(json.dumps({
                 'type': 'init',
                 'topology': self.monitor.get_topology(),
-                'stats': self.monitor.get_stats()
+                'stats': self.monitor.get_stats(),
+                'async_state': self.monitor.get_async_state(),
+                'recent_flows': self.monitor.get_recent_message_flows(10)
             }))
 
             # 保持连接并接收消息
@@ -114,12 +116,41 @@ class MonitorServer:
     async def _broadcast_entry(self, entry: dict):
         """广播日志条目"""
         event_type = entry.get('event_type', '')
+        level = entry.get('level', 'info')
 
+        # 拓扑更新（已有）
         if event_type in ['agent_created', 'input_connection_set', 'output_connection_set']:
             await self.broadcast({
                 'type': 'topology_update',
                 'topology': self.monitor.get_topology()
             })
+
+        # 新增：消息流更新
+        elif event_type in ['message_flow', 'message_sent', 'message_delivered'] or 'message_flow' in event_type:
+            await self.broadcast({
+                'type': 'message_flow',
+                'entry': entry,
+                'recent_flows': self.monitor.get_recent_message_flows(10)
+            })
+
+        # 新增：Agent 激活更新
+        elif event_type in ['agent_activated', 'processing_started'] or 'activated' in event_type:
+            await self.broadcast({
+                'type': 'agent_activated',
+                'entry': entry,
+                'agent': self.monitor.get_agent(entry.get('data', {}).get('agent_id', ''))
+            })
+
+        # 新增：异步状态更新
+        elif event_type in ['async_snapshot', 'task_created', 'task_completed'] or 'async' in event_type:
+            await self.broadcast({
+                'type': 'async_update',
+                'entry': entry,
+                'async_state': self.monitor.get_async_state(),
+                'recent_tasks': self.monitor.get_recent_tasks(20)
+            })
+
+        # 普通日志条目
         else:
             await self.broadcast({
                 'type': 'log_entry',

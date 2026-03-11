@@ -47,29 +47,62 @@
             </div>
         </div>
 
-        <!-- Agent 列表面板和详情 -->
-        <div class="agent-panel">
-            <div class="agent-list">
-                <h2>Agent 列表 ({{ agents.length }})</h2>
-                <ul>
-                    <li v-for="agent in agents" :key="agent.id"
-                        @click="selectAgent(agent)"
-                        :class="{ selected: selectedAgent?.id === agent.id }">
-                        <span class="agent-id">{{ truncateId(agent.id) }}</span>
-                        <span class="agent-type">{{ agent.type }}</span>
-                    </li>
-                </ul>
+        <!-- 底部面板：Agent 列表、Agent 详情、异步活动 -->
+        <div class="bottom-panels">
+            <div class="agent-panel">
+                <div class="agent-list">
+                    <h2>Agent 列表 ({{ agents.length }})</h2>
+                    <ul>
+                        <li v-for="agent in agents" :key="agent.id"
+                            @click="selectAgent(agent)"
+                            :class="{ selected: selectedAgent?.id === agent.id }">
+                            <span class="agent-id">{{ truncateId(agent.id) }}</span>
+                            <span class="agent-type">{{ agent.type }}</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="agent-detail" v-if="selectedAgent">
+                    <h2>Agent 详情</h2>
+                    <div class="detail-content">
+                        <p><strong>ID:</strong> {{ selectedAgent.id }}</p>
+                        <p><strong>类型:</strong> {{ selectedAgent.type }}</p>
+                        <p><strong>地址:</strong> {{ selectedAgent.object_addr }}</p>
+                        <p><strong>消息数:</strong> {{ selectedAgent.message_count }}</p>
+                        <p><strong>激活次数:</strong> {{ selectedAgent.activation_count || 0 }}</p>
+                        <p><strong>输入连接:</strong> {{ selectedAgent.input_connections.join(', ') || '无' }}</p>
+                        <p><strong>输出连接:</strong> {{ selectedAgent.output_connections.join(', ') || '无' }}</p>
+                    </div>
+                </div>
             </div>
 
-            <div class="agent-detail" v-if="selectedAgent">
-                <h2>Agent 详情</h2>
-                <div class="detail-content">
-                    <p><strong>ID:</strong> {{ selectedAgent.id }}</p>
-                    <p><strong>类型:</strong> {{ selectedAgent.type }}</p>
-                    <p><strong>地址:</strong> {{ selectedAgent.object_addr }}</p>
-                    <p><strong>消息数:</strong> {{ selectedAgent.message_count }}</p>
-                    <p><strong>输入连接:</strong> {{ selectedAgent.input_connections.join(', ') || '无' }}</p>
-                    <p><strong>输出连接:</strong> {{ selectedAgent.output_connections.join(', ') || '无' }}</p>
+            <!-- 异步活动监控面板 -->
+            <div class="async-panel">
+                <h2>异步活动监控</h2>
+                <div class="async-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">活跃任务数:</span>
+                        <span class="stat-value">{{ asyncState.all_tasks_count || 0 }}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">当前任务:</span>
+                        <span class="stat-value">{{ asyncState.current_task?.task_name || 'None' }}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">事件循环:</span>
+                        <span class="stat-value" :class="{ 'status-running': asyncState.event_loop?.is_running }">
+                            {{ asyncState.event_loop?.is_running ? '运行中' : '停止' }}
+                        </span>
+                    </div>
+                </div>
+                <div class="task-list">
+                    <h3>任务列表 ({{ asyncState.all_tasks?.length || 0 }})</h3>
+                    <ul>
+                        <li v-for="task in asyncState.all_tasks.slice(0, 10)" :key="task.task_id">
+                            <span class="task-name">{{ task.task_name }}</span>
+                            <span class="coro-name">{{ truncateId(task.coro_name) }}</span>
+                        </li>
+                    </ul>
                 </div>
             </div>
         </div>

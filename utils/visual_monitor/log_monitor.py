@@ -67,6 +67,20 @@ class LogMonitor:
         self.connections: List[dict] = []  # 连接列表
         self.recent_logs: List[dict] = []  # 最近日志（用于显示）
 
+        # DETAIL 日志相关状态
+        self.message_flows: List[dict] = []  # 消息流记录
+        self.agent_activations: Dict[str, dict] = {}  # agent_id -> 激活信息
+
+        # ARCH 日志相关状态
+        self.async_state: Dict[str, Any] = {
+            'timestamp': 0,
+            'current_task': None,
+            'all_tasks_count': 0,
+            'all_tasks': [],
+            'event_loop': None
+        }
+        self.recent_tasks: List[dict] = []  # 最近的任务事件
+
     def add_callback(self, callback: Callable[[dict], None]):
         """添加日志Entry 回调"""
         with self._lock:
@@ -93,6 +107,7 @@ class LogMonitor:
         source = entry.get('source', '')
         data = entry.get('data', {})
         timestamp = entry.get('timestamp_us', 0)
+        level = entry.get('level', 'info')
 
         # 更新最近日志
         self.recent_logs.append(entry)
@@ -112,7 +127,8 @@ class LogMonitor:
                     'input_connections': [],
                     'output_connections': [],
                     'message_count': 0,
-                    'last_active': timestamp
+                    'last_active': timestamp,
+                    'activation_count': 0
                 }
 
         # 处理输入连接设置
@@ -149,6 +165,79 @@ class LogMonitor:
                 self.agents[current_id]['message_count'] += 1
                 self.agents[current_id]['last_active'] = timestamp
 
+        # ========== DETAIL 日志处理 ==========
+        # 处理消息流事件
+        elif event_type == 'message_flow' or (level == 'detail' and 'message_flow' in event_type):
+            source_agent = data.get('source_agent') or data.get('sender_id', '')
+            target_agent = data.get('target_agent') or data.get('receiver_id', '')
+
+            flow_entry = {
+                'from': source_agent,
+                'to': target_agent,
+                'timestamp': timestamp,
+                'message_type': data.get('message_type', 'unknown'),
+                'duration_ms': data.get('processing_time_ms', 0),
+                'keyword': data.get('keyword', '')
+            }
+            self.message_flows.append(flow_entry)
+
+            # 限制存储数量
+            if len(self.message_flows) > 500:
+                self.message_flows = self.message_flows[-250:]
+
+        # 处理 Agent 激活事件
+        elif event_type == 'agent_activated' or (level == 'detail' and 'activated' in event_type):
+            agent_id = data.get('agent_id', '')
+            if agent_id and agent_id in self.agents:
+                self.agents[agent_id]['activation_count'] = data.get('activation_count',
+                    self.agents[agent_id].get('activation_count', 0) + 1)
+                self.agents[agent_id]['last_activation'] = timestamp
+                self.agents[agent_id]['last_active'] = timestamp
+
+                self.agent_activations[agent_id] = {
+                    'agent_id': agent_id,
+                    'timestamp': timestamp,
+                    'queue_size': data.get('queue_size', 0)
+                }
+
+        # ========== ARCH 日志处理 ==========
+        # 处理异步上下文快照
+        elif event_type == 'async_snapshot' or (level == 'arch' and 'async' in event_type):
+            async_context = entry.get('async_context', {})
+            self.async_state = {
+                'timestamp': timestamp,
+                'current_task': async_context.get('current_task'),
+                'all_tasks_count': len(async_context.get('all_tasks', [])),
+                'all_tasks': async_context.get('all_tasks', []),
+                'event_loop': async_context.get('event_loop')
+            }
+
+        # 处理任务创建事件
+        elif event_type == 'task_created' or (level == 'arch' and 'task_created' in event_type):
+            task_info = {
+                'task_id': data.get('task_id'),
+                'task_name': data.get('task_name', 'unknown'),
+                'coro_name': data.get('coro_name', 'unknown'),
+                'timestamp': timestamp,
+                'event': 'created'
+            }
+            self.recent_tasks.append(task_info)
+            if len(self.recent_tasks) > 200:
+                self.recent_tasks = self.recent_tasks[-100:]
+
+        # 处理任务完成事件
+        elif event_type == 'task_completed' or (level == 'arch' and 'task_completed' in event_type):
+            task_info = {
+                'task_id': data.get('task_id'),
+                'task_name': data.get('task_name', 'unknown'),
+                'duration_ms': data.get('duration_ms', 0),
+                'timestamp': timestamp,
+                'event': 'completed'
+            }
+            self.recent_tasks.append(task_info)
+            if len(self.recent_tasks) > 200:
+                self.recent_tasks = self.recent_tasks[-100:]
+
         # 通知回调
         self._notify_callbacks(entry)
 
@@ -163,16 +252,31 @@ class LogMonitor:
         handler = LogFileHandler(self._handle_log_entry)
         self._observer = Observer()
 
-        # 只监控 system.jsonl 文件
+        # 监控 system.jsonl (CONTENT 日志)
         system_log = self.log_dir / "system.jsonl"
         if system_log.exists():
-            # 监控整个目录但只处理 system.jsonl
             self._observer.schedule(handler, str(self.log_dir), recursive=False)
-            # 读取现有日志内容
             self._load_existing_logs(system_log)
+            print(f"LogMonitor: Watching {system_log}")
+
+        # 监控 detail/system.detail.jsonl (DETAIL 日志)
+        detail_log = self.log_dir / "detail" / "system.detail.jsonl"
+        if detail_log.exists():
+            detail_dir = self.log_dir / "detail"
+            self._observer.schedule(handler, str(detail_dir), recursive=False)
+            self._load_existing_logs(detail_log)
+            print(f"LogMonitor: Watching {detail_log}")
+
+        # 监控 arch/system.arch.jsonl (ARCH 日志)
+        arch_log = self.log_dir / "arch" / "system.arch.jsonl"
+        if arch_log.exists():
+            arch_dir = self.log_dir / "arch"
+            self._observer.schedule(handler, str(arch_dir), recursive=False)
+            self._load_existing_logs(arch_log)
+            print(f"LogMonitor: Watching {arch_log}")
 
         self._observer.start()
-        print(f"LogMonitor started, watching: {self.log_dir}/system.jsonl")
+        print(f"LogMonitor started")
 
     def _load_existing_logs(self, log_file: Path):
         """加载现有的日志内容"""
@@ -187,7 +291,7 @@ class LogMonitor:
                         except json.JSONDecodeError:
                             pass
         except Exception as e:
-            print(f"Error loading existing logs: {e}")
+            print(f"Error loading existing logs from {log_file}: {e}")
 
     def stop(self):
         """停止监控"""
@@ -221,8 +325,22 @@ class LogMonitor:
         return {
             'total_agents': len(self.agents),
             'total_connections': len(self.connections),
-            'logs_processed': len(self.recent_logs)
+            'logs_processed': len(self.recent_logs),
+            'message_flows_count': len(self.message_flows),
+            'async_tasks_count': self.async_state.get('all_tasks_count', 0)
         }
+
+    def get_recent_message_flows(self, limit: int = 10) -> List[dict]:
+        """获取最近的消息流"""
+        return self.message_flows[-limit:] if self.message_flows else []
+
+    def get_async_state(self) -> dict:
+        """获取异步状态"""
+        return self.async_state.copy()
+
+    def get_recent_tasks(self, limit: int = 20) -> List[dict]:
+        """获取最近的任务事件"""
+        return self.recent_tasks[-limit:] if self.recent_tasks else []
 
 
 # 全局监控实例

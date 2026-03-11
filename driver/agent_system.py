@@ -74,6 +74,13 @@ class MessageBus(Loggable):
             "message_length": len(message)
         })
 
+        # 记录异步快照 (ARCH 日志)
+        self.arch("async_snapshot", {
+            "operation": "message_routing",
+            "sender_id": sender_id,
+            "receiver_id": receiver_id
+        })
+
         if receiver_id in self.agents:
             self.agents[receiver_id].receive_message(message, sender_id)
             self.info("message_delivered", {
@@ -203,9 +210,17 @@ class AgentSystem(Loggable):
             "agents_count": len(self.agents)
         })
         self._system_running = True
+
         for agent_id, agent in self.agents.items():
             if hasattr(agent, 'start_processing'):
+                # 记录任务创建 (ARCH 日志)
+                self.arch("task_created", {
+                    "task_name": f"agent_processor_{agent_id}",
+                    "coro_name": "Agent._processing_loop",
+                    "agent_id": agent_id
+                })
                 await agent.start_processing()
+
         self.info("all_agents_started", {})
 
     async def stop_all_agents(self):

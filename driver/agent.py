@@ -137,6 +137,23 @@ class Agent(Loggable):
         for uid in uids:
             await self.message_bus.send_message(message, uid, self.id)
 
+            # 记录消息流 (DETAIL/ARCH 日志)
+            self.detail("message_flow", {
+                "source_agent": self.id,
+                "target_agent": uid,
+                "keyword": keyword,
+                "message_type": "standard",
+                "message_length": len(message)
+            })
+
+            # 记录架构日志 (ARCH 模式)
+            self.arch("message_flow_arch", {
+                "source_agent": self.id,
+                "target_agent": uid,
+                "keyword": keyword,
+                "bus_addr": hex(id(self.message_bus)) if self.message_bus else None
+            })
+
         self.info("message_sent", {
             "keyword": keyword,
             "receivers_count": len(uids)
@@ -386,6 +403,23 @@ class Agent(Loggable):
         self.frequency_calculator.record_activation()
         frequency_stats = self.frequency_calculator.get_frequency_stats()
         keyword_frequencies = self.get_keyword_message_frequencies()
+
+        # 记录 Agent 激活 (DETAIL 日志)
+        self.detail("agent_activated", {
+            "agent_id": self.id,
+            "activation_count": frequency_stats['total_activations'],
+            "queue_size": self.input_queue.qsize(),
+            "messages_in_batch": len(messages),
+            "instant_frequency_hz": frequency_stats['instant_frequency_hz']
+        })
+
+        # 记录架构日志 (ARCH 模式)
+        self.arch("agent_processing_arch", {
+            "agent_id": self.id,
+            "messages_count": len(messages),
+            "state_length": len(self.state),
+            "keywords": list(keyword_frequencies.keys())
+        })
 
         output_count = Counter([x[0] for x in self.output_connection])
 

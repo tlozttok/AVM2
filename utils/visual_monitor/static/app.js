@@ -11,6 +11,13 @@ createApp({
         const connections = ref([]);
         const selectedAgent = ref(null);
         const logContainer = ref(null);
+        const asyncState = ref({
+            all_tasks_count: 0,
+            current_task: null,
+            all_tasks: [],
+            event_loop: null
+        });
+        const recentFlows = ref([]);
 
         // WebSocket 连接
         let ws = null;
@@ -57,6 +64,12 @@ createApp({
                 if (data.stats) {
                     console.log('Stats:', data.stats);
                 }
+                if (data.async_state) {
+                    asyncState.value = data.async_state;
+                }
+                if (data.recent_flows) {
+                    recentFlows.value = data.recent_flows;
+                }
             } else if (type === 'topology' || type === 'topology_update') {
                 // 拓扑更新
                 if (data.topology) {
@@ -79,6 +92,95 @@ createApp({
                 // Agent 详情
                 if (data.data) {
                     selectedAgent.value = data.data;
+                }
+            } else if (type === 'message_flow') {
+                // 消息流更新 - 触发边动画
+                handleMessageFlow(data.entry);
+                if (data.recent_flows) {
+                    recentFlows.value = data.recent_flows;
+                }
+            } else if (type === 'agent_activated') {
+                // Agent 激活 - 高亮节点
+                handleAgentActivated(data.entry);
+                if (data.agent) {
+                    // 更新 agents 列表中的激活计数
+                    const idx = agents.value.findIndex(a => a.id === data.agent.id);
+                    if (idx !== -1) {
+                        agents.value[idx] = data.agent;
+                    }
+                }
+            } else if (type === 'async_update') {
+                // 异步状态更新
+                if (data.async_state) {
+                    asyncState.value = data.async_state;
+                }
+            }
+        }
+
+        // 处理消息流 - 高亮边
+        function handleMessageFlow(entry) {
+            if (!cytoscapeInstance || !entry) return;
+
+            const data = entry.data || {};
+            const from = data.source_agent || data.sender_id;
+            const to = data.target_agent || data.receiver_id;
+
+            if (from && to) {
+                // 找到对应的边并高亮
+                const edge = cytoscapeInstance.edges().filter(e =>
+                    e.data('source') === from && e.data('target') === to
+                );
+
+                if (edge.length > 0) {
+                    // 添加流动动画
+                    edge.animate({
+                        style: {
+                            'line-color': '#f472b6',
+                            'target-arrow-color': '#f472b6',
+                            'width': 4
+                        }
+                    }, {
+                        duration: 200
+                    }).animate({
+                        style: {
+                            'line-color': '#60a5fa',
+                            'target-arrow-color': '#60a5fa',
+                            'width': 2
+                        }
+                    }, {
+                        duration: 300
+                    });
+                }
+            }
+        }
+
+        // 处理 Agent 激活 - 高亮节点
+        function handleAgentActivated(entry) {
+            if (!cytoscapeInstance || !entry) return;
+
+            const data = entry.data || {};
+            const agentId = data.agent_id;
+
+            if (agentId) {
+                const node = cytoscapeInstance.getElementById(agentId);
+                if (node) {
+                    // 高亮节点
+                    node.animate({
+                        style: {
+                            'background-color': '#4ade80',
+                            'border-width': 3,
+                            'border-color': '#fff'
+                        }
+                    }, {
+                        duration: 300
+                    }).animate({
+                        style: {
+                            'background-color': '#e94560',
+                            'border-width': 0
+                        }
+                    }, {
+                        duration: 500
+                    });
                 }
             }
         }
@@ -262,11 +364,15 @@ createApp({
             connections,
             selectedAgent,
             logContainer,
+            asyncState,
+            recentFlows,
             filteredLogs,
             selectAgent,
             formatTime,
             truncateId,
-            formatLogData
+            formatLogData,
+            handleMessageFlow,
+            handleAgentActivated
         };
     }
 }).mount('#app');
