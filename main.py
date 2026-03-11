@@ -171,7 +171,7 @@ async def main():
     loop = asyncio.get_event_loop()
 
     def signal_handler():
-        self.logger.info("收到中断信号，开始关闭...")
+        app.logger.info("收到中断信号，开始关闭...")
         print("\n收到中断信号...")
         app._shutdown = True
         # 取消主任务

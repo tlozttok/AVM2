@@ -131,6 +131,40 @@ class LogMonitor:
                     'activation_count': 0
                 }
 
+        # 处理 InputAgent 创建
+        elif event_type == 'input_agent_created':
+            agent_id = data.get('agent_id', '')
+            if agent_id:
+                self.agents[agent_id] = {
+                    'id': agent_id,
+                    'type': data.get('agent_type', 'InputAgent'),
+                    'object_addr': data.get('object_addr', ''),
+                    'queue_addr': data.get('queue_addr', ''),
+                    'created_at': timestamp,
+                    'input_connections': [],
+                    'output_connections': [],
+                    'message_count': 0,
+                    'last_active': timestamp,
+                    'activation_count': 0
+                }
+
+        # 处理 OutputAgent 创建
+        elif event_type == 'output_agent_created':
+            agent_id = data.get('agent_id', '')
+            if agent_id:
+                self.agents[agent_id] = {
+                    'id': agent_id,
+                    'type': data.get('agent_type', 'OutputAgent'),
+                    'object_addr': data.get('object_addr', ''),
+                    'queue_addr': data.get('queue_addr', ''),
+                    'created_at': timestamp,
+                    'input_connections': [],
+                    'output_connections': [],
+                    'message_count': 0,
+                    'last_active': timestamp,
+                    'activation_count': 0
+                }
+
         # 处理输入连接设置
         elif event_type == 'input_connection_set':
             sender_id = data.get('sender_id', '')

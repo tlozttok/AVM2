@@ -243,14 +243,17 @@ class MonitorServer:
 
         await asyncio.Future()  # 运行直到取消
 
-    async def _process_request_wrapper(self, connection, request_headers):
-        """包装 process_http_request 以适配 websockets 16.0+ API"""
-        # 从 connection 对象获取请求路径
-        path = connection.request.path if hasattr(connection, 'request') else '/'
-        return await self.process_http_request(path, request_headers)
+    async def _process_request_wrapper(self, connection, request):
+        """包装 process_http_request 以适配 websockets 14.0+ API
 
-    async def process_http_request(self, path: str, request_headers):
-        """处理 HTTP 请求，返回静态文件 - websockets 16.0+ 兼容版本"""
+        websockets 14.0+ 中 process_request 接收 (connection, request) 参数
+        其中 request 对象有 path 和 headers 属性
+        """
+        path = request.path if hasattr(request, 'path') else '/'
+        return await self.process_http_request(path, request)
+
+    async def process_http_request(self, path: str, request):
+        """处理 HTTP 请求，返回静态文件 - websockets 14.0+ 兼容版本"""
         # 解析路径
         if path == '/':
             file_path = self.template_dir / "index.html"
