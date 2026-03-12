@@ -16,6 +16,8 @@ from utils.logger import LoggerFactory
 from driver.net import AgentNetwork
 from AVBash.terminal_agents import TerminalPair
 from utils.visual_monitor.server import run_async_server
+from utils.visual_monitor.unified_logger import unified_logger, LogMode
+from utils.agent_message_logger import archive_agent_logs
 
 
 class MainApplication:
@@ -41,6 +43,9 @@ class MainApplication:
         print("=" * 50)
         print()
 
+        # 归档旧 Agent 消息日志
+        archive_agent_logs()
+
         # 1. 启动监控服务器（后台任务）
         self.logger.info("启动监控服务器...")
         print("启动监控服务器...")
@@ -49,10 +54,10 @@ class MainApplication:
         )
         print("  监控服务器运行于：http://localhost:8765")
 
-        # 2. 创建并启动终端
+        # 2. 创建并启动终端（10秒渲染一次）
         self.logger.info("启动终端...")
         print("启动终端...")
-        self.terminal_pair = TerminalPair(fps=10, default_rows=20, default_cols=80)
+        self.terminal_pair = TerminalPair(fps=0.1, default_rows=20, default_cols=80)
         await self.terminal_pair.start()
 
         # 3. 检查终端是否正常运行
@@ -67,6 +72,10 @@ class MainApplication:
         print("初始化 Agent 系统...")
         self.system = AgentSystem()
 
+        # 设置系统运行频率：10秒一次调用
+        self.system.set_message_delay(10.0)
+        print("  系统消息延迟: 10s")
+
         # 5. 创建 Agent 网络
         self.logger.info("创建 Agent 网络...")
         print("创建 Agent 网络...")
@@ -79,7 +88,7 @@ class MainApplication:
         print(f"  终端 OutputAgent: {output_agent.id}")
 
         # 7. 创建内部 Agent 网络
-        agents = self.network.create_network(num_agents=3)
+        agents = self.network.create_network(num_agents=10)
         self.logger.info(f"创建内部 Agent 网络，共 {len(agents)} 个 Agent")
         print(f"  创建了 {len(agents)} 个内部 Agent")
 
@@ -100,6 +109,11 @@ class MainApplication:
         # 9. 启动所有 Agent
         self.logger.info("启动所有 Agent...")
         print("启动所有 Agent...")
+
+        # 设置日志级别为 ARCH（用于异步活动监控）
+        unified_logger.set_mode(LogMode.ARCH)
+        print("  日志模式: ARCH (架构级)")
+
         await self.system.start_all_agents()
         self.logger.info("所有 Agent 已启动")
         print("  所有 Agent 已启动")

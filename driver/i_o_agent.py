@@ -181,13 +181,13 @@ class InputAgent(InputOutputAgent, ABC):
         """发送搜索信号"""
         pass
 
-    async def start(self):
-        """启动输入 Agent"""
+    async def start_processing(self):
+        """启动输入 Agent 处理循环"""
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
         self.info("input_agent_started", {})
 
-    async def stop(self):
+    async def stop_processing(self):
         """停止输入 Agent"""
         self._running = False
         if self._task:

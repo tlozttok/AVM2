@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from utils.visual_monitor.unified_logger import Loggable
 from utils.llm_logger import llm_logger
 from utils.frequency_calculator import ActivationFrequencyCalculator, FrequencyMonitor
+from utils.agent_message_logger import agent_message_logger
 
 # Load environment variables
 load_dotenv()
@@ -424,18 +425,37 @@ class Agent(Loggable):
         output_count = Counter([x[0] for x in self.output_connection])
 
         # 构建系统提示
-        system_prompt = (
-            self.pre_prompt +
-            "\n<self_state>" + self.state + "</self_state>" +
-            "\n<output_keywords>" + str(output_count) + "</output_keywords>" +
-            "\n<input_keywords>" + str([x[1] for x in self.input_connection]) + "</input_keywords>" +
-            "\n<your_id>" + self.id + "</your_id>" +
-            "\n<activation_frequency>瞬时：" + f"{frequency_stats['instant_frequency_hz']:.3f}" +
-            "Hz, 移动平均：" + f"{frequency_stats['moving_average_frequency_hz']:.3f}Hz</activation_frequency>" +
-            "\n<keyword_message_frequencies>" + str(keyword_frequencies) + "</keyword_message_frequencies>"
-        )
+        USE_FREQUENCY_STATS=False
+        if USE_FREQUENCY_STATS:
+            system_prompt = (
+                self.pre_prompt +
+                "\n<self_state>" + self.state + "</self_state>" +
+                "\n<output_keywords>" + str(output_count) + "</output_keywords>" +
+                "\n<input_keywords>" + str([x[1] for x in self.input_connection]) + "</input_keywords>" +
+                "\n<your_id>" + self.id + "</your_id>" +
+                "\n<activation_frequency>瞬时：" + f"{frequency_stats['instant_frequency_hz']:.3f}" +
+                "Hz, 移动平均：" + f"{frequency_stats['moving_average_frequency_hz']:.3f}Hz</activation_frequency>" +
+                "\n<keyword_message_frequencies>" + str(keyword_frequencies) + "</keyword_message_frequencies>"
+            )
+        else:
+            system_prompt = (
+                self.pre_prompt +
+                "\n<self_state>" + self.state + "</self_state>" +
+                "\n<output_keywords>" + str(output_count) + "</output_keywords>" +
+                "\n<input_keywords>" + str([x[1] for x in self.input_connection]) + "</input_keywords>" +
+                "\n<your_id>" + self.id + "</your_id>"
+            )
 
         user_prompt = "\n".join([f"{m[0]} : {m[1]}" for m in messages])
+
+        # 记录 Agent 消息到专门日志（调用 LLM 前）
+        agent_message_logger.log_message(
+            agent_id=self.id,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            input_messages=messages,
+            state=self.state
+        )
 
         try:
             start_time = time.time()

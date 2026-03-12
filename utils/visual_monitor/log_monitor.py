@@ -275,14 +275,37 @@ class LogMonitor:
         # 通知回调
         self._notify_callbacks(entry)
 
-    def start(self):
-        """开始监控"""
+    def start(self, clear_old_logs=True):
+        """开始监控
+
+        Args:
+            clear_old_logs: 是否清空旧日志文件（默认 True，避免累积）
+        """
         if self._running:
             return
 
         self._running = True
 
-        # 设置文件监控
+        # 可选：清空旧日志（必须在创建 handler 之前，避免位置记录混乱）
+        if clear_old_logs:
+            self._clear_old_logs()
+
+        # 清空内存状态
+        self.agents.clear()
+        self.connections.clear()
+        self.recent_logs.clear()
+        self.message_flows.clear()
+        self.agent_activations.clear()
+        self.async_state = {
+            'timestamp': 0,
+            'current_task': None,
+            'all_tasks_count': 0,
+            'all_tasks': [],
+            'event_loop': None
+        }
+        self.recent_tasks.clear()
+
+        # 设置文件监控（在清空日志后创建，确保位置从0开始）
         handler = LogFileHandler(self._handle_log_entry)
         self._observer = Observer()
 
@@ -311,6 +334,21 @@ class LogMonitor:
 
         self._observer.start()
         print(f"LogMonitor started")
+
+    def _clear_old_logs(self):
+        """清空旧日志文件"""
+        log_files = [
+            self.log_dir / "system.jsonl",
+            self.log_dir / "detail" / "system.detail.jsonl",
+            self.log_dir / "arch" / "system.arch.jsonl"
+        ]
+        for log_file in log_files:
+            if log_file.exists():
+                try:
+                    open(log_file, 'w').close()
+                    print(f"LogMonitor: Cleared {log_file}")
+                except Exception as e:
+                    print(f"LogMonitor: Failed to clear {log_file}: {e}")
 
     def _load_existing_logs(self, log_file: Path):
         """加载现有的日志内容"""

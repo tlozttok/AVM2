@@ -247,9 +247,22 @@ class MonitorServer:
         """包装 process_http_request 以适配 websockets 14.0+ API
 
         websockets 14.0+ 中 process_request 接收 (connection, request) 参数
-        其中 request 对象有 path 和 headers 属性
+        其中 request 对象有 path, headers 等属性
+
+        对于 WebSocket 升级请求（带 Upgrade: websocket 头），返回 None 让 websockets 处理握手
+        对于普通 HTTP 请求，返回 HTTP Response
         """
         path = request.path if hasattr(request, 'path') else '/'
+
+        # 检查是否是 WebSocket 升级请求
+        # 如果是，返回 None 让 websockets 正常处理握手
+        upgrade_header = request.headers.get('Upgrade', '').lower()
+        connection_header = request.headers.get('Connection', '').lower()
+
+        if 'websocket' in upgrade_header or 'upgrade' in connection_header:
+            return None  # 让 websockets 处理 WebSocket 握手
+
+        # 普通 HTTP 请求，返回静态文件
         return await self.process_http_request(path, request)
 
     async def process_http_request(self, path: str, request):

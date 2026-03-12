@@ -297,6 +297,18 @@ class AgentSystem(Loggable):
             "factor": factor
         })
 
+    def set_message_delay(self, seconds: float):
+        """
+        设置消息延迟（秒）
+
+        Args:
+            seconds: 延迟秒数，0 表示无延迟
+        """
+        self.message_bus.set_message_delay(seconds)
+        self.info("system_message_delay_set", {
+            "delay_seconds": seconds
+        })
+
     def is_paused(self) -> bool:
         """检查系统是否暂停"""
         return self.message_bus.is_message_paused()

@@ -56,10 +56,14 @@ createApp({
 
             if (type === 'init') {
                 // 初始数据
+                console.log('Received init message:', data);
                 if (data.topology) {
                     agents.value = data.topology.agents || [];
                     connections.value = data.topology.connections || [];
+                    console.log('Set agents:', agents.value.length, 'connections:', connections.value.length);
                     updateCytoscape();
+                } else {
+                    console.log('No topology in init message');
                 }
                 if (data.stats) {
                     console.log('Stats:', data.stats);
@@ -187,8 +191,15 @@ createApp({
 
         // Cytoscape 拓扑图
         function initCytoscape() {
+            const container = document.getElementById('cytoplasm');
+            if (!container) {
+                console.error('Cytoscape container not found!');
+                return;
+            }
+            console.log('Initializing Cytoscape...');
+
             cytoscapeInstance = cytoscape({
-                container: document.getElementById('cytoplasm'),
+                container: container,
                 style: [
                     {
                         selector: 'node',
@@ -197,7 +208,7 @@ createApp({
                             'label': 'data(id)',
                             'text-valign': 'center',
                             'text-halign': 'center',
-                            'text-fill-color': '#fff',
+                            'color': '#fff',
                             'text-outline-color': '#000',
                             'text-outline-width': 1,
                             'width': 60,
@@ -229,12 +240,9 @@ createApp({
                     }
                 ],
                 layout: {
-                    name: 'cose',
-                    animate: true,
-                    animationDuration: 500,
-                    nodeOverlap: 20,
-                    idealEdgeLength: 100,
-                    edgeElasticity: 100
+                    name: 'grid',
+                    fit: true,
+                    padding: 10
                 }
             });
 
@@ -244,6 +252,8 @@ createApp({
                 const agentId = node.data('id');
                 selectAgentById(agentId);
             });
+
+            console.log('Cytoscape initialized');
         }
 
         // 更新拓扑图
@@ -251,6 +261,14 @@ createApp({
             if (!cytoscapeInstance) {
                 initCytoscape();
             }
+
+            // 如果没有节点，不更新
+            if (agents.value.length === 0) {
+                console.log('No agents to display');
+                return;
+            }
+
+            console.log('Updating Cytoscape with', agents.value.length, 'agents,', connections.value.length, 'connections');
 
             // 构建节点和边
             const elements = [];
@@ -276,17 +294,26 @@ createApp({
                 });
             });
 
+            console.log('Adding elements:', elements.length);
+
             // 更新数据
             cytoscapeInstance.elements().remove();
             cytoscapeInstance.add(elements);
 
             // 重新布局
-            const layout = cytoscapeInstance.layout({
-                name: 'cose',
-                animate: true,
-                animationDuration: 300
-            });
-            layout.run();
+            try {
+                const layout = cytoscapeInstance.layout({
+                    name: 'circle',
+                    fit: true,
+                    padding: 30,
+                    animate: true,
+                    animationDuration: 300
+                });
+                layout.run();
+                console.log('Layout applied');
+            } catch (e) {
+                console.error('Layout error:', e);
+            }
         }
 
         // 选择 Agent
