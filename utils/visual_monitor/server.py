@@ -33,6 +33,9 @@ class MonitorServer:
         self.connections: Set[WebSocketServerProtocol] = set()
         self._running = False
 
+        # 存储事件循环引用，用于跨线程调度
+        self._loop = None
+
         # 静态文件目录
         self.static_dir = Path(__file__).parent / "static"
         self.template_dir = Path(__file__).parent / "templates"
@@ -94,35 +97,46 @@ class MonitorServer:
     async def broadcast(self, data: dict):
         """广播数据到所有连接"""
         if not self.connections:
+            print(f"[Broadcast] No connections to broadcast to")
             return
 
         message = json.dumps(data)
+        print(f"[Broadcast] Broadcasting to {len(self.connections)} clients: {data.get('type', 'unknown')}")
         await asyncio.gather(
             *[ws.send(message) for ws in self.connections],
             return_exceptions=True
         )
 
     def on_log_entry(self, entry: dict):
-        """日志条目回调"""
+        """日志条目回调 - 从 watchdog 线程调用"""
+        if self._loop is None:
+            print("[Warning] No event loop stored, cannot broadcast")
+            return
         try:
-            loop = asyncio.get_event_loop()
             asyncio.run_coroutine_threadsafe(
                 self._broadcast_entry(entry),
-                loop
+                self._loop
             )
-        except RuntimeError:
-            pass
+        except Exception as e:
+            print(f"[Error] Failed to schedule broadcast: {e}")
 
     async def _broadcast_entry(self, entry: dict):
         """广播日志条目"""
         event_type = entry.get('event_type', '')
         level = entry.get('level', 'info')
+        source = entry.get('source', '')
+
+        print(f"[Broadcast] Processing entry: event_type={event_type}, source={source}")
 
         # 拓扑更新（已有）
-        if event_type in ['agent_created', 'input_connection_set', 'output_connection_set']:
+        if event_type in ['agent_created', 'input_connection_set', 'output_connection_set',
+                          'input_connection_keyword_updated', 'output_connection_keyword_updated']:
+            print(f"[Broadcast] Broadcasting topology_update for {event_type}")
+            topology = self.monitor.get_topology()
+            print(f"[Broadcast] Topology has {len(topology['connections'])} connections")
             await self.broadcast({
                 'type': 'topology_update',
-                'topology': self.monitor.get_topology()
+                'topology': topology
             })
 
         # 新增：消息流更新
@@ -218,6 +232,9 @@ class MonitorServer:
 
     async def run_server(self):
         """运行服务器"""
+        # 存储事件循环引用，供回调使用
+        self._loop = asyncio.get_event_loop()
+
         # 初始化监控器
         self.monitor = get_monitor(str(self.log_dir))
 

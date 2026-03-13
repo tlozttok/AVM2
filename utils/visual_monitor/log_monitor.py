@@ -208,9 +208,16 @@ class LogMonitor:
             new_keyword = data.get('new_keyword', '')
             current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
             # 查找并更新所有指向 current_id、keyword 为 old_keyword 的输入连接
+            updated = False
             for conn in self.connections:
-                if conn['to'] == current_id and conn['keyword'] == old_keyword:
+                conn_type = conn.get('type')
+                # 兼容旧数据：如果没有 type 字段或 type 为 input，且 to 匹配
+                if (conn_type is None or conn_type == 'input') and conn['to'] == current_id and conn['keyword'] == old_keyword:
                     conn['keyword'] = new_keyword
+                    conn['type'] = 'input'  # 确保设置 type
+                    updated = True
+            if updated:
+                print(f"[LogMonitor] Updated input connection keyword: {current_id} '{old_keyword}' -> '{new_keyword}'")
 
         # 处理输出连接 keyword 更新
         elif event_type == 'output_connection_keyword_updated':
@@ -218,9 +225,16 @@ class LogMonitor:
             new_keyword = data.get('new_keyword', '')
             current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
             # 查找并更新所有从 current_id 出发、keyword 为 old_keyword 的输出连接
+            updated = False
             for conn in self.connections:
-                if conn['from'] == current_id and conn['keyword'] == old_keyword:
+                conn_type = conn.get('type')
+                # 兼容旧数据：如果没有 type 字段或 type 为 output，且 from 匹配
+                if (conn_type is None or conn_type == 'output') and conn['from'] == current_id and conn['keyword'] == old_keyword:
                     conn['keyword'] = new_keyword
+                    conn['type'] = 'output'  # 确保设置 type
+                    updated = True
+            if updated:
+                print(f"[LogMonitor] Updated output connection keyword: {current_id} '{old_keyword}' -> '{new_keyword}'")
 
         # 处理连接删除
         elif 'connection_deleted' in event_type:

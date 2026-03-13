@@ -125,8 +125,13 @@ createApp({
             };
 
             ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                handleMessage(data);
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[WebSocket] Received message:', data.type, data);
+                    handleMessage(data);
+                } catch (err) {
+                    console.error('[WebSocket] Error parsing message:', err);
+                }
             };
         }
 
@@ -156,10 +161,30 @@ createApp({
                 }
             } else if (type === 'topology' || type === 'topology_update') {
                 // 拓扑更新
+                console.log('[WebSocket] Received topology_update:', data);
                 if (data.topology) {
+                    const oldConnectionCount = connections.value.length;
+                    const oldAgentCount = agents.value.length;
+
+                    console.log('[WebSocket] Setting agents:', data.topology.agents?.length, 'connections:', data.topology.connections?.length);
                     agents.value = data.topology.agents || [];
                     connections.value = data.topology.connections || [];
-                    updateCytoscape();
+
+                    const newConnectionCount = connections.value.length;
+                    const newAgentCount = agents.value.length;
+
+                    console.log('[WebSocket] Updated connections:', connections.value.map(c => ({from: c.from, to: c.to, keyword: c.keyword, type: c.type})));
+
+                    // 判断更新类型：如果节点数和连接数都不变，只是 keyword 更新
+                    const isKeywordUpdate = (oldAgentCount === newAgentCount) && (oldConnectionCount === newConnectionCount) && (oldConnectionCount > 0);
+                    console.log('[WebSocket] Update type:', isKeywordUpdate ? 'keyword update' : 'structural update');
+
+                    // 使用 nextTick 确保 Vue 更新后再渲染
+                    nextTick(() => {
+                        updateCytoscape(isKeywordUpdate);
+                    });
+                } else {
+                    console.warn('[WebSocket] topology_update missing topology data');
                 }
             } else if (type === 'log_entry') {
                 // 新日志条目
@@ -511,7 +536,7 @@ createApp({
         }
 
         // 更新拓扑图
-        function updateCytoscape() {
+        function updateCytoscape(isKeywordUpdate = false) {
             if (!cytoscapeInstance) {
                 initCytoscape();
             }
@@ -523,6 +548,27 @@ createApp({
             }
 
             console.log('Updating Cytoscape with', agents.value.length, 'agents,', connections.value.length, 'connections');
+            console.log('Connection details:', connections.value.map(c => `${c.from}->${c.to} [${c.keyword}] (${c.type})`));
+
+            // 如果是 keyword 更新（连接数不变），只更新边的 label 而不重新布局
+            if (isKeywordUpdate) {
+                console.log('[updateCytoscape] Keyword update - updating edge labels only');
+                cytoscapeInstance.batch(() => {
+                    connections.value.forEach(conn => {
+                        // 查找对应的边并更新 keyword
+                        const edges = cytoscapeInstance.edges().filter(e => {
+                            return e.data('source') === conn.from &&
+                                   e.data('target') === conn.to &&
+                                   e.data('connType') === (conn.type || 'output');
+                        });
+                        edges.forEach(edge => {
+                            edge.data('keyword', conn.keyword);
+                        });
+                    });
+                });
+                console.log('[updateCytoscape] Edge labels updated, layout preserved');
+                return;
+            }
 
             // 构建节点和边
             const elements = [];
@@ -552,22 +598,45 @@ createApp({
 
             // 添加边
             connections.value.forEach(conn => {
+                // 确保有 type 字段，默认为 output（兼容旧数据）
+                const connType = conn.type || 'output';
                 elements.push({
                     data: {
                         source: conn.from,
                         target: conn.to,
                         keyword: conn.keyword,
-                        connType: conn.type  // 新增连接类型
+                        connType: connType
                     },
-                    classes: conn.type === 'input' ? 'input-edge' : 'output-edge'
+                    classes: connType === 'input' ? 'input-edge' : 'output-edge'
                 });
             });
 
             console.log('Adding elements:', elements.length);
 
-            // 更新数据
-            cytoscapeInstance.elements().remove();
-            cytoscapeInstance.add(elements);
+            // 更新数据 - 完全重建图以反映最新状态
+            cytoscapeInstance.batch(() => {
+                // 保留现有布局位置（如果存在）
+                const nodePositions = {};
+                cytoscapeInstance.nodes().forEach(node => {
+                    nodePositions[node.id()] = {
+                        x: node.position('x'),
+                        y: node.position('y')
+                    };
+                });
+
+                cytoscapeInstance.elements().remove();
+                cytoscapeInstance.add(elements);
+
+                // 恢复节点位置（避免布局跳动）
+                Object.keys(nodePositions).forEach(nodeId => {
+                    const node = cytoscapeInstance.getElementById(nodeId);
+                    if (node) {
+                        node.position(nodePositions[nodeId]);
+                    }
+                });
+            });
+
+            console.log('Elements updated, current edges:', cytoscapeInstance.edges().map(e => `${e.data('source')}->${e.data('target')}: ${e.data('keyword')}`));
 
             // 重新布局 - 使用力导向布局
             try {
