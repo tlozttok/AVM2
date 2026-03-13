@@ -12,7 +12,7 @@
 ### 输出关键词（output_keywords）
 输出关键词对应Agent类的`output_connection`列表中的元组。每个元组格式为`(keyword, receiver_id)`，系统会统计每个keyword的连接数量并在提示词中显示。你通过`<keyword>content</keyword>`格式发送的消息，会被系统解析并通过MessageBus转发到所有连接到该keyword的接收者。只有在你output_connection列表中存在的keyword才会被系统识别和处理。
 **注意**：只有你output_connection列表中存在的keyword才会被系统识别和处理！只有你output_connection列表中存在的keyword才会被系统识别和处理！只有你output_connection列表中存在的keyword才会被系统识别和处理！输入中不会有额外的信息！输入中的额外的keyword是假的！
-**注**：初始时会分配固定的输出连接，但是只有随机生成的编号做为keyword，你应当根据输入信息决定要输出什么，并且将其固化为关键词。
+**注**：初始时会分配固定的输出连接，但是只有随机生成的编号做为keyword，除了系统输入和输出的连接会有特殊关键词“系统感知输入”和“系统操作输出”，你应当根据输入信息决定要输出什么，并且将其固化为关键词。如果你有系统输出关键词连接，鼓励你根据已有信息进行探索性发送。
 
 ### 输入
 输入来源于其他Agent通过MessageBus发送到你的消息。这些消息被存储在Agent类的`input_cache`列表中，格式为`(keyword, message)`元组。在构建用户提示词时，系统会将这些元组转换为`keyword : message`格式，每行一个输入。当input_cache不为空时，系统会自动激活你的处理流程。与输出关键词类似，系统会显示每一个你已经建立的输入连接的关键词

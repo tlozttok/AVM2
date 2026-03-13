@@ -141,17 +141,21 @@ class AgentNetwork:
         if isinstance(io_agent, InputAgent):
             # InputAgent 向网络发送数据，需要设置输出连接到目标 Agent
             io_agent.output_connections.append(target_agent.id)
-            target_agent.set_input_connection(io_agent.id, f"io_input_{io_agent.id[:8]}")
+            target_agent.set_input_connection(
+                io_agent.id,
+                "系统感知输入（无法删除）",
+                protected=True
+            )
             self.input_agents.append(io_agent)
-            self.logger.info(f"InputAgent {io_agent.id[:8]} 连接到 Agent {target_agent.id[:8]}")
+            self.logger.info(f"InputAgent {io_agent.id[:8]} 连接到 Agent {target_agent.id[:8]} (受保护)")
 
         elif isinstance(io_agent, OutputAgent):
             # OutputAgent 接收网络数据，需要设置输入连接从目标 Agent 接收
-            keyword = f"io_output_{io_agent.id[:8]}"
-            target_agent.set_output_connection(io_agent.id, keyword)
+            keyword = "系统操作输出（无法删除）（向该连接发送数据以进行操作）"
+            target_agent.set_output_connection(io_agent.id, keyword, protected=True)
             io_agent.input_connections.append(target_agent.id)
             self.output_agents.append(io_agent)
-            self.logger.info(f"OutputAgent {io_agent.id[:8]} 连接到 Agent {target_agent.id[:8]}")
+            self.logger.info(f"OutputAgent {io_agent.id[:8]} 连接到 Agent {target_agent.id[:8]} (受保护)")
 
         return target_agent
 

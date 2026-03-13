@@ -88,7 +88,7 @@ class MainApplication:
         print(f"  终端 OutputAgent: {output_agent.id}")
 
         # 7. 创建内部 Agent 网络
-        agents = self.network.create_network(num_agents=10)
+        agents = self.network.create_network(num_agents=5)
         self.logger.info(f"创建内部 Agent 网络，共 {len(agents)} 个 Agent")
         print(f"  创建了 {len(agents)} 个内部 Agent")
 
