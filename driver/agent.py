@@ -187,8 +187,12 @@ class Agent(Loggable):
             "connections_after": after
         })
 
-    def set_input_connection(self, agent_id: str, keyword: str):
-        """设置输入连接"""
+    def set_input_connection(self, agent_id: str, keyword: str, protected: bool = False):
+        """设置输入连接，支持受保护连接"""
+        # 如果 protected=True，在 keyword 中加入保护标记
+        if protected:
+            keyword = f"[受保护]{keyword}"
+
         before = len(self.input_connection)
         self.input_connection.append((agent_id, keyword))
         after = len(self.input_connection)
@@ -196,12 +200,17 @@ class Agent(Loggable):
         self.info("input_connection_set", {
             "sender_id": agent_id,
             "keyword": keyword,
+            "protected": protected,
             "connections_before": before,
             "connections_after": after
         })
 
-    def set_output_connection(self, agent_id: str, keyword: str):
-        """设置输出连接"""
+    def set_output_connection(self, agent_id: str, keyword: str, protected: bool = False):
+        """设置输出连接，支持受保护连接"""
+        # 如果 protected=True，在 keyword 中加入保护标记
+        if protected:
+            keyword = f"[受保护]{keyword}"
+
         before = len(self.output_connection)
         self.output_connection.append((keyword, agent_id))
         after = len(self.output_connection)
@@ -209,6 +218,7 @@ class Agent(Loggable):
         self.info("output_connection_set", {
             "receiver_id": agent_id,
             "keyword": keyword,
+            "protected": protected,
             "connections_before": before,
             "connections_after": after
         })
@@ -242,6 +252,106 @@ class Agent(Loggable):
             "sender_id": sender_id,
             "connections_before": before,
             "connections_after": after
+        })
+
+    def _is_connection_protected(self, keyword: str) -> bool:
+        """检查连接是否受保护（通过keyword前缀）"""
+        return keyword.startswith("[受保护]")
+
+    def can_delete_connection(self, target_agent_id: str, connection_type: str) -> bool:
+        """
+        询问对方 Agent 是否允许删除连接
+        - 如果对方是 InputAgent/OutputAgent，返回对方的决定
+        - 普通 Agent 返回 True（允许删除）
+        """
+        from driver.i_o_agent import InputAgent, OutputAgent
+
+        if self.system is None:
+            return True  # 无系统引用，允许删除
+
+        target = self.system.get_agent(target_agent_id)
+        if target is None:
+            return True  # Agent 不存在，允许删除
+
+        # 检查对方是否是 I/O Agent
+        if isinstance(target, (InputAgent, OutputAgent)):
+            return target.on_connection_delete_request(self.id, connection_type)
+
+        # 普通 Agent 不能拒绝
+        return True
+
+    def delete_input_connection_with_check(self, keyword: str):
+        """带权限检查的输入连接删除"""
+        deleted = []
+        remaining = []
+
+        for sender_id, kw in self.input_connection:
+            if kw == keyword:
+                # 检查是否受保护
+                if self._is_connection_protected(kw):
+                    remaining.append((sender_id, kw))
+                    self.logger.info(f"Protected input connection '{kw}' from {sender_id} cannot be deleted")
+                    continue
+
+                # 询问对方是否允许删除
+                if self.can_delete_connection(sender_id, "input"):
+                    deleted.append((sender_id, kw))
+                else:
+                    # 对方拒绝，保留连接
+                    remaining.append((sender_id, kw))
+                    self.logger.info(f"Agent {sender_id} rejected input connection deletion")
+            else:
+                remaining.append((sender_id, kw))
+
+        self.input_connection = remaining
+
+        # 通知允许删除的对应对应删除他们的输出连接
+        for sender_id, _ in deleted:
+            agent = self.system.get_agent(sender_id) if self.system else None
+            if agent:
+                agent.delete_output_connection(self.id)
+
+        self.info("input_connection_deleted_with_check", {
+            "keyword": keyword,
+            "deleted_count": len(deleted),
+            "remaining_count": len(remaining)
+        })
+
+    def delete_output_connection_with_check(self, keyword: str):
+        """带权限检查的输出连接删除"""
+        deleted = []
+        remaining = []
+
+        for kw, receiver_id in self.output_connection:
+            if kw == keyword:
+                # 检查是否受保护
+                if self._is_connection_protected(kw):
+                    remaining.append((kw, receiver_id))
+                    self.logger.info(f"Protected output connection '{kw}' to {receiver_id} cannot be deleted")
+                    continue
+
+                # 询问对方是否允许删除
+                if self.can_delete_connection(receiver_id, "output"):
+                    deleted.append((kw, receiver_id))
+                else:
+                    # 对方拒绝，保留连接
+                    remaining.append((kw, receiver_id))
+                    self.logger.info(f"Agent {receiver_id} rejected output connection deletion")
+            else:
+                remaining.append((kw, receiver_id))
+
+        self.output_connection = remaining
+
+        # 通知允许删除的对应对应删除他们的输入连接
+        for _, receiver_id in deleted:
+            agent = self.system.get_agent(receiver_id) if self.system else None
+            if agent:
+                agent.delete_input_connection_by_id(self.id)
+
+        self.info("output_connection_deleted_with_check", {
+            "keyword": keyword,
+            "deleted_count": len(deleted),
+            "remaining_count": len(remaining)
         })
 
     def update_input_connection_keyword(self, old_keyword: str, new_keyword: str):
@@ -364,9 +474,9 @@ class Agent(Loggable):
                 signal_type = signal.get("type")
 
                 if signal_type == "REJECT_INPUT":
-                    # 只通过keyword删除
+                    # 只通过keyword删除，使用带保护的删除方法
                     if signal.get("keyword"):
-                        self.delete_input_connection(signal["keyword"])
+                        self.delete_input_connection_with_check(signal["keyword"])
 
                 elif signal_type == "ACCEPT_INPUT":
                     # 通过old_keyword和new_keyword修改已有连接的keyword
@@ -383,9 +493,9 @@ class Agent(Loggable):
                         self.update_output_connection_keyword(old_keyword, new_keyword)
 
                 elif signal_type == "REJECT_OUTPUT":
-                    # 只通过keyword删除
+                    # 只通过keyword删除，使用带保护的删除方法
                     if signal.get("keyword"):
-                        self.delete_output_connection_by_keyword(signal["keyword"])
+                        self.delete_output_connection_with_check(signal["keyword"])
 
         except Exception as e:
             self.error("signal_processing_failed", {

@@ -40,6 +40,14 @@ class TerminalInputAgent(InputAgent):
         """根据 message 决定是否进行 seek - 终端被动输出，不主动 seek"""
         pass
 
+    def on_connection_delete_request(self, from_agent_id: str, connection_type: str) -> bool:
+        """
+        收到删除连接请求时的回调
+        TerminalInputAgent 始终拒绝删除（返回 False）以保护核心连接
+        """
+        self.logger.info(f"Rejecting {connection_type} connection deletion request from {from_agent_id}")
+        return False  # 拒绝删除
+
     def has_data_to_send(self) -> bool:
         """检查是否有新的渲染数据需要发送"""
         return self._render_dirty and bool(self._last_render)
@@ -75,6 +83,14 @@ class TerminalOutputAgent(OutputAgent):
     def explore(self, message: str):
         """根据 message 决定是否探索 - 终端不主动探索"""
         pass
+
+    def on_connection_delete_request(self, from_agent_id: str, connection_type: str) -> bool:
+        """
+        收到删除连接请求时的回调
+        TerminalOutputAgent 始终拒绝删除（返回 False）以保护核心连接
+        """
+        self.logger.info(f"Rejecting {connection_type} connection deletion request from {from_agent_id}")
+        return False  # 拒绝删除
 
     async def execute_data(self, data: str):
         """

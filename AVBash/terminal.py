@@ -825,13 +825,15 @@ class TerminalManager:
 
     def _render_focused_window(self, window: Window) -> str:
         """渲染焦点窗口"""
+        from datetime import datetime
+
         lines = []
         inner_width = window.cols - 2  # 减去左右边框
 
         lines.append("╔" + "═" * inner_width + "╗")
 
-        # 标题栏
-        title = f"► {window.title} [ID:{window.id}] "
+        # 标题栏（加入当前时间）
+        title = f"► {window.title} [ID:{window.id}] [{datetime.now().strftime('%H:%M:%S')}] "
         title_padded = truncate_to_width(title, inner_width)
         title_padded = title_padded + " " * (inner_width - display_width(title_padded))
         lines.append("║" + title_padded + "║")

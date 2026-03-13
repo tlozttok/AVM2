@@ -26,6 +26,20 @@ class InputOutputAgent(Loggable):
 
         self.set_log_name(str(self.id))
 
+    def on_connection_delete_request(self, from_agent_id: str, connection_type: str) -> bool:
+        """
+        收到删除连接请求时的回调
+        子类可以覆盖此方法以实现自定义的删除保护逻辑
+        返回 True 表示允许删除，False 表示拒绝删除
+        默认实现：允许删除（返回 True）
+        """
+        self.info("connection_delete_request_received", {
+            "from_agent_id": from_agent_id,
+            "connection_type": connection_type,
+            "decision": "allowed"
+        })
+        return True
+
 
 class OutputAgent(InputOutputAgent, ABC):
     """
