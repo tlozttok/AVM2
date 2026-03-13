@@ -244,6 +244,74 @@ class Agent(Loggable):
             "connections_after": after
         })
 
+    def update_input_connection_keyword(self, old_keyword: str, new_keyword: str):
+        """更新输入连接的关键词"""
+        updated = False
+        new_connections = []
+
+        for sender_id, keyword in self.input_connection:
+            if keyword == old_keyword:
+                new_connections.append((sender_id, new_keyword))
+                updated = True
+                # 通知发送方更新其输出连接
+                agent = self.system.get_agent(sender_id)
+                if agent:
+                    agent.update_output_connection_keyword_for_receiver(self.id, old_keyword, new_keyword)
+            else:
+                new_connections.append((sender_id, keyword))
+
+        self.input_connection = new_connections
+
+        if updated:
+            self.info("input_connection_keyword_updated", {
+                "old_keyword": old_keyword,
+                "new_keyword": new_keyword
+            })
+
+    def update_output_connection_keyword(self, old_keyword: str, new_keyword: str):
+        """更新输出连接的关键词"""
+        updated = False
+        new_connections = []
+
+        for keyword, receiver_id in self.output_connection:
+            if keyword == old_keyword:
+                new_connections.append((new_keyword, receiver_id))
+                updated = True
+                # 通知接收方更新其输入连接
+                agent = self.system.get_agent(receiver_id)
+                if agent:
+                    agent.update_input_connection_keyword_for_sender(self.id, old_keyword, new_keyword)
+            else:
+                new_connections.append((keyword, receiver_id))
+
+        self.output_connection = new_connections
+
+        if updated:
+            self.info("output_connection_keyword_updated", {
+                "old_keyword": old_keyword,
+                "new_keyword": new_keyword
+            })
+
+    def update_input_connection_keyword_for_sender(self, sender_id: str, old_keyword: str, new_keyword: str):
+        """由对方调用，更新指定发送者的输入连接关键词"""
+        new_connections = []
+        for sid, keyword in self.input_connection:
+            if sid == sender_id and keyword == old_keyword:
+                new_connections.append((sender_id, new_keyword))
+            else:
+                new_connections.append((sid, keyword))
+        self.input_connection = new_connections
+
+    def update_output_connection_keyword_for_receiver(self, receiver_id: str, old_keyword: str, new_keyword: str):
+        """由对方调用，更新指定接收者的输出连接关键词"""
+        new_connections = []
+        for keyword, rid in self.output_connection:
+            if rid == receiver_id and keyword == old_keyword:
+                new_connections.append((new_keyword, receiver_id))
+            else:
+                new_connections.append((keyword, rid))
+        self.output_connection = new_connections
+
     def get_frequency_stats(self) -> dict:
         """获取激活频率统计"""
         return self.frequency_calculator.get_frequency_stats()
@@ -296,26 +364,28 @@ class Agent(Loggable):
                 signal_type = signal.get("type")
 
                 if signal_type == "REJECT_INPUT":
+                    # 只通过keyword删除
                     if signal.get("keyword"):
                         self.delete_input_connection(signal["keyword"])
-                    if signal.get("id"):
-                        agent = self.system.get_agent(signal["id"])
-                        if agent:
-                            agent.delete_output_connection(self.id)
 
                 elif signal_type == "ACCEPT_INPUT":
-                    self.set_input_connection(signal["id"], signal["keyword"])
+                    # 通过old_keyword和new_keyword修改已有连接的keyword
+                    old_keyword = signal.get("old_keyword")
+                    new_keyword = signal.get("new_keyword")
+                    if old_keyword and new_keyword:
+                        self.update_input_connection_keyword(old_keyword, new_keyword)
 
                 elif signal_type == "SET_OUTPUT":
-                    self.set_output_connection(signal["id"], signal["keyword"])
+                    # 通过old_keyword和new_keyword修改已有连接的keyword
+                    old_keyword = signal.get("old_keyword")
+                    new_keyword = signal.get("new_keyword")
+                    if old_keyword and new_keyword:
+                        self.update_output_connection_keyword(old_keyword, new_keyword)
 
                 elif signal_type == "REJECT_OUTPUT":
+                    # 只通过keyword删除
                     if signal.get("keyword"):
                         self.delete_output_connection_by_keyword(signal["keyword"])
-                    if signal.get("id"):
-                        agent = self.system.get_agent(signal["id"])
-                        if agent:
-                            agent.delete_input_connection_by_id(self.id)
 
         except Exception as e:
             self.error("signal_processing_failed", {

@@ -115,7 +115,7 @@ class AgentNetwork:
             随机生成的关键字字符串
         """
         # 临时实现：使用简单的前缀 + 随机数
-        prefixes = ['data', 'signal', 'message', 'info', 'cmd', 'event']
+        prefixes = ['message']
         return f"{random.choice(prefixes)}_{random.randint(1000, 9999)}"
 
     def connect_io_agent(self, io_agent: InputAgent | OutputAgent) -> Optional[Agent]:

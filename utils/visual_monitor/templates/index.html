@@ -25,8 +25,20 @@
         <div class="main-content">
             <!-- 网络拓扑图 -->
             <div class="topology-section">
-                <h2>网络拓扑</h2>
+                <div class="topology-header">
+                    <h2>网络拓扑</h2>
+                    <div class="topology-controls">
+                        <button @click="fitTopology" class="btn-control" title="适应视图">⊡ 适应</button>
+                        <button @click="resetLayout" class="btn-control" title="重新布局">⟲ 重排</button>
+                        <button @click="toggleLayout" class="btn-control" title="切换布局">⧉ 切换</button>
+                    </div>
+                </div>
                 <div id="cytoplasm"></div>
+                <div class="topology-legend">
+                    <span class="legend-item"><span class="dot blue"></span>普通Agent</span>
+                    <span class="legend-item"><span class="dot green"></span>输入Agent</span>
+                    <span class="legend-item"><span class="dot pink"></span>输出Agent</span>
+                </div>
             </div>
 
             <!-- 日志流 -->

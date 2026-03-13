@@ -172,9 +172,17 @@ class LogMonitor:
             # 从 source 提取当前 agent id
             current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
             if current_id in self.agents:
-                conn = {'from': sender_id, 'to': current_id, 'keyword': keyword}
+                # 不再去重：每条输入连接独立添加，带有类型标记
+                conn = {
+                    'from': sender_id,
+                    'to': current_id,
+                    'keyword': keyword,
+                    'type': 'input'  # 标记为输入连接
+                }
                 self.connections.append(conn)
-                self.agents[current_id]['input_connections'].append(sender_id)
+                # 更新 agent 的 input_connections 列表（去重）
+                if sender_id not in self.agents[current_id]['input_connections']:
+                    self.agents[current_id]['input_connections'].append(sender_id)
 
         # 处理输出连接设置
         elif event_type == 'output_connection_set':
@@ -182,9 +190,37 @@ class LogMonitor:
             keyword = data.get('keyword', '')
             current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
             if current_id in self.agents:
-                conn = {'from': current_id, 'to': receiver_id, 'keyword': keyword}
+                # 不再去重：每条输出连接独立添加，带有类型标记
+                conn = {
+                    'from': current_id,
+                    'to': receiver_id,
+                    'keyword': keyword,
+                    'type': 'output'  # 标记为输出连接
+                }
                 self.connections.append(conn)
-                self.agents[current_id]['output_connections'].append(receiver_id)
+                # 更新 agent 的 output_connections 列表（去重）
+                if receiver_id not in self.agents[current_id]['output_connections']:
+                    self.agents[current_id]['output_connections'].append(receiver_id)
+
+        # 处理输入连接 keyword 更新
+        elif event_type == 'input_connection_keyword_updated':
+            old_keyword = data.get('old_keyword', '')
+            new_keyword = data.get('new_keyword', '')
+            current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
+            # 查找并更新所有指向 current_id、keyword 为 old_keyword 的输入连接
+            for conn in self.connections:
+                if conn['to'] == current_id and conn['keyword'] == old_keyword:
+                    conn['keyword'] = new_keyword
+
+        # 处理输出连接 keyword 更新
+        elif event_type == 'output_connection_keyword_updated':
+            old_keyword = data.get('old_keyword', '')
+            new_keyword = data.get('new_keyword', '')
+            current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
+            # 查找并更新所有从 current_id 出发、keyword 为 old_keyword 的输出连接
+            for conn in self.connections:
+                if conn['from'] == current_id and conn['keyword'] == old_keyword:
+                    conn['keyword'] = new_keyword
 
         # 处理连接删除
         elif 'connection_deleted' in event_type:

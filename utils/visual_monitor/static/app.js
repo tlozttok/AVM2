@@ -19,9 +19,89 @@ createApp({
         });
         const recentFlows = ref([]);
 
-        // WebSocket 连接
-        let ws = null;
-        let cytoscapeInstance = null;
+        // 当前布局类型
+        let currentLayoutType = 'cose';
+
+        // 适应视图
+        function fitTopology() {
+            if (cytoscapeInstance) {
+                cytoscapeInstance.fit();
+                cytoscapeInstance.center();
+            }
+        }
+
+        // 重新运行布局
+        function resetLayout() {
+            if (!cytoscapeInstance) return;
+
+            const layout = cytoscapeInstance.layout({
+                name: 'cose',
+                fit: true,
+                padding: 50,
+                animate: true,
+                animationDuration: 500,
+                componentSpacing: 200,
+                nodeRepulsion: 800000,
+                edgeElasticity: 50,
+                nestingFactor: 10,
+                gravity: 40,
+                numIter: 2000,
+                initialTemp: 400,
+                coolingFactor: 0.92,
+                minTemp: 1.0,
+                nodeOverlap: 40,
+                idealEdgeLength: 150
+            });
+            layout.run();
+        }
+
+        // 切换布局类型
+        function toggleLayout() {
+            if (!cytoscapeInstance) return;
+
+            const layouts = ['cose', 'circle', 'grid', 'concentric'];
+            const currentIndex = layouts.indexOf(currentLayoutType);
+            currentLayoutType = layouts[(currentIndex + 1) % layouts.length];
+
+            const layoutOptions = {
+                name: currentLayoutType,
+                fit: true,
+                padding: 30,
+                animate: true,
+                animationDuration: 500
+            };
+
+            // 为力导向布局添加特殊参数
+            if (currentLayoutType === 'cose') {
+                Object.assign(layoutOptions, {
+                    padding: 50,
+                    componentSpacing: 200,
+                    nodeRepulsion: 800000,
+                    edgeElasticity: 50,
+                    nestingFactor: 10,
+                    gravity: 40,
+                    numIter: 2000,
+                    nodeOverlap: 40,
+                    idealEdgeLength: 150
+                });
+            }
+
+            // 为同心圆布局添加参数
+            if (currentLayoutType === 'concentric') {
+                Object.assign(layoutOptions, {
+                    minNodeSpacing: 50,
+                    levelWidth: function(nodes) {
+                        return nodes.degree() / 2;
+                    }
+                });
+            }
+
+            const layout = cytoscapeInstance.layout(layoutOptions);
+            layout.run();
+
+            // 显示提示
+            console.log('Switched to layout:', currentLayoutType);
+        }
 
         // 连接 WebSocket
         function connectWebSocket() {
@@ -130,9 +210,9 @@ createApp({
             const to = data.target_agent || data.receiver_id;
 
             if (from && to) {
-                // 找到对应的边并高亮
+                // 找到对应的输出边（消息发送方向）并高亮
                 const edge = cytoscapeInstance.edges().filter(e =>
-                    e.data('source') === from && e.data('target') === to
+                    e.data('source') === from && e.data('target') === to && e.hasClass('output-edge')
                 );
 
                 if (edge.length > 0) {
@@ -147,9 +227,9 @@ createApp({
                         duration: 200
                     }).animate({
                         style: {
-                            'line-color': '#60a5fa',
-                            'target-arrow-color': '#60a5fa',
-                            'width': 2
+                            'line-color': '#3b82f6',
+                            'target-arrow-color': '#3b82f6',
+                            'width': 2.5
                         }
                     }, {
                         duration: 300
@@ -168,19 +248,18 @@ createApp({
             if (agentId) {
                 const node = cytoscapeInstance.getElementById(agentId);
                 if (node) {
-                    // 高亮节点
+                    // 高亮节点（只闪烁边框，不改变背景色和大小）
                     node.animate({
                         style: {
-                            'background-color': '#4ade80',
-                            'border-width': 3,
-                            'border-color': '#fff'
+                            'border-width': 5,
+                            'border-color': '#4ade80'
                         }
                     }, {
-                        duration: 300
+                        duration: 200
                     }).animate({
                         style: {
-                            'background-color': '#e94560',
-                            'border-width': 0
+                            'border-width': 0,
+                            'border-color': '#fff'
                         }
                     }, {
                         duration: 500
@@ -204,38 +283,122 @@ createApp({
                     {
                         selector: 'node',
                         style: {
-                            'background-color': '#e94560',
-                            'label': 'data(id)',
+                            'background-color': '#60a5fa',
+                            'label': 'data(label)',
                             'text-valign': 'center',
                             'text-halign': 'center',
                             'color': '#fff',
-                            'text-outline-color': '#000',
-                            'text-outline-width': 1,
-                            'width': 60,
-                            'height': 60,
-                            'font-size': '10px'
+                            'text-outline-color': '#1e293b',
+                            'text-outline-width': 2,
+                            'width': 70,
+                            'height': 70,
+                            'font-size': '10px',
+                            'font-weight': 'bold',
+                            'border-width': 0,
+                            'border-color': '#fff',
+                            'transition-property': 'border-width, border-color, opacity',
+                            'transition-duration': '0.2s'
+                        }
+                    },
+                    {
+                        selector: 'node[type="Agent"]',
+                        style: {
+                            'background-color': '#60a5fa'
+                        }
+                    },
+                    {
+                        selector: 'node[type="InputAgent"]',
+                        style: {
+                            'background-color': '#4ade80',
+                            'shape': 'round-rectangle'
+                        }
+                    },
+                    {
+                        selector: 'node[type="OutputAgent"]',
+                        style: {
+                            'background-color': '#f472b6',
+                            'shape': 'round-rectangle'
                         }
                     },
                     {
                         selector: 'edge',
                         style: {
                             'width': 2,
-                            'line-color': '#60a5fa',
-                            'target-arrow-color': '#60a5fa',
+                            'line-color': '#475569',
+                            'target-arrow-color': '#475569',
                             'target-arrow-shape': 'triangle',
-                            'curve-style': 'bezier',
+                            'curve-style': 'unbundled-bezier',
+                            'control-point-step-size': 40,
                             'label': 'data(keyword)',
                             'font-size': '8px',
+                            'color': '#94a3b8',
+                            'text-background-color': '#0f172a',
+                            'text-background-opacity': 0.8,
+                            'text-background-padding': '2px',
+                            'text-background-shape': 'roundrectangle',
                             'text-rotation': 'autorotate',
-                            'text-margin-y': -10
+                            'text-margin-y': -10,
+                            'arrow-scale': 1.2
+                        }
+                    },
+                    {
+                        selector: '.input-edge',
+                        style: {
+                            'width': 1.5,
+                            'line-color': '#9ca3af',  // 浅灰色
+                            'line-style': 'dashed',    // 虚线
+                            'target-arrow-shape': 'none',  // 输入连接无箭头
+                            'curve-style': 'unbundled-bezier',
+                            'control-point-step-size': 80,  // 更大的弯曲，让边向外分开
+                            'label': 'data(keyword)',
+                            'font-size': '7px',
+                            'color': '#9ca3af',
+                            'text-opacity': 0.6,  // 文本透明度
+                            'text-background-color': '#0f172a',
+                            'text-background-opacity': 0.6,  // 背景透明度
+                            'text-background-padding': '2px',
+                            'text-background-shape': 'roundrectangle',
+                            'text-rotation': 'autorotate',
+                            'text-margin-y': -10,
+                            'opacity': 0.6  // 边线透明度
+                        }
+                    },
+                    {
+                        selector: '.output-edge',
+                        style: {
+                            'width': 2.5,
+                            'line-color': '#3b82f6',   // 更深的蓝色
+                            'line-style': 'solid',     // 实线
+                            'target-arrow-color': '#3b82f6',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'unbundled-bezier',
+                            'control-point-step-size': 30,  // 较小的弯曲，让边向内
+                            'label': 'data(keyword)',
+                            'font-size': '9px',
+                            'color': '#60a5fa',
+                            'text-background-color': '#0f172a',
+                            'text-background-opacity': 0.8,
+                            'text-background-padding': '2px',
+                            'text-background-shape': 'roundrectangle',
+                            'text-rotation': 'autorotate',
+                            'text-margin-y': -10,
+                            'arrow-scale': 1.3
                         }
                     },
                     {
                         selector: 'node:selected',
                         style: {
-                            'background-color': '#f472b6',
-                            'border-width': 3,
+                            'background-color': '#fbbf24',
+                            'border-width': 4,
                             'border-color': '#fff'
+                        }
+                    },
+                    {
+                        selector: '.highlighted',
+                        style: {
+                            'line-color': '#f472b6',
+                            'target-arrow-color': '#f472b6',
+                            'width': 4
                         }
                     }
                 ],
@@ -243,7 +406,17 @@ createApp({
                     name: 'grid',
                     fit: true,
                     padding: 10
-                }
+                },
+                // 启用交互
+                userZoomingEnabled: true,
+                userPanningEnabled: true,
+                boxSelectionEnabled: true,
+                selectionType: 'single',
+                // 滚轮缩放灵敏度（数值越小缩放越精细）
+                wheelSensitivity: 0.15,
+                // 最小/最大缩放级别
+                minZoom: 0.1,
+                maxZoom: 3.0
             });
 
             // 点击节点事件
@@ -251,6 +424,87 @@ createApp({
                 const node = event.target;
                 const agentId = node.data('id');
                 selectAgentById(agentId);
+            });
+
+            // 鼠标悬停高亮相关连接
+            cytoscapeInstance.on('mouseover', 'node', (event) => {
+                const node = event.target;
+                const connectedEdges = node.connectedEdges();
+                const connectedNodes = node.neighborhood().nodes();
+
+                // 降低其他元素透明度
+                cytoscapeInstance.elements().not(node).not(connectedEdges).not(connectedNodes).animate({
+                    style: { 'opacity': 0.2 }
+                }, { duration: 200 });
+
+                // 高亮当前节点（只改变边框，不改变大小）
+                node.animate({
+                    style: {
+                        'border-width': 4,
+                        'border-color': '#fbbf24',
+                        'opacity': 1
+                    }
+                }, { duration: 200 });
+
+                // 高亮输入边（灰色虚线变亮）
+                connectedEdges.filter('.input-edge').animate({
+                    style: {
+                        'line-color': '#d1d5db',
+                        'width': 2.5,
+                        'opacity': 1  // 悬停时不透明
+                    }
+                }, { duration: 200 });
+
+                // 高亮输出边（蓝色实线变亮）
+                connectedEdges.filter('.output-edge').animate({
+                    style: {
+                        'line-color': '#93c5fd',
+                        'target-arrow-color': '#93c5fd',
+                        'width': 3.5,
+                        'opacity': 1
+                    }
+                }, { duration: 200 });
+
+                // 高亮连接的节点
+                connectedNodes.animate({
+                    style: { 'opacity': 1 }
+                }, { duration: 200 });
+            });
+
+            // 鼠标移出恢复
+            cytoscapeInstance.on('mouseout', 'node', () => {
+                // 恢复节点样式（不修改width/height，避免覆盖动态大小）
+                cytoscapeInstance.nodes().animate({
+                    style: {
+                        'opacity': 1,
+                        'border-width': 0,
+                        'border-color': '#fff'
+                    }
+                }, { duration: 200 });
+
+                // 恢复输入边样式
+                cytoscapeInstance.edges('.input-edge').animate({
+                    style: {
+                        'opacity': 0.6,  // 恢复半透明
+                        'line-color': '#9ca3af',
+                        'width': 1.5
+                    }
+                }, { duration: 200 });
+
+                // 恢复输出边样式
+                cytoscapeInstance.edges('.output-edge').animate({
+                    style: {
+                        'opacity': 1,
+                        'line-color': '#3b82f6',
+                        'target-arrow-color': '#3b82f6',
+                        'width': 2.5
+                    }
+                }, { duration: 200 });
+            });
+
+            // 启用节点拖拽
+            cytoscapeInstance.on('dragfree', 'node', (event) => {
+                console.log('Node dragged:', event.target.data('id'));
             });
 
             console.log('Cytoscape initialized');
@@ -275,10 +529,23 @@ createApp({
 
             // 添加节点
             agents.value.forEach(agent => {
+                // 计算连接数，用于动态调整节点大小
+                const connectionCount = (agent.input_connections?.length || 0) +
+                                       (agent.output_connections?.length || 0);
+                const size = Math.min(100, Math.max(50, 50 + connectionCount * 5));
+                // 截断ID用于显示
+                const shortId = agent.id.substring(0, 8) + '...';
+
                 elements.push({
                     data: {
                         id: agent.id,
-                        type: agent.type
+                        label: shortId,
+                        type: agent.type,
+                        connectionCount: connectionCount
+                    },
+                    style: {
+                        'width': size,
+                        'height': size
                     }
                 });
             });
@@ -289,8 +556,10 @@ createApp({
                     data: {
                         source: conn.from,
                         target: conn.to,
-                        keyword: conn.keyword
-                    }
+                        keyword: conn.keyword,
+                        connType: conn.type  // 新增连接类型
+                    },
+                    classes: conn.type === 'input' ? 'input-edge' : 'output-edge'
                 });
             });
 
@@ -300,19 +569,39 @@ createApp({
             cytoscapeInstance.elements().remove();
             cytoscapeInstance.add(elements);
 
-            // 重新布局
+            // 重新布局 - 使用力导向布局
             try {
                 const layout = cytoscapeInstance.layout({
-                    name: 'circle',
+                    name: 'cose',
                     fit: true,
-                    padding: 30,
+                    padding: 50,
                     animate: true,
-                    animationDuration: 300
+                    animationDuration: 500,
+                    // 力导向参数 - 调整以分散节点
+                    componentSpacing: 200,
+                    nodeRepulsion: 800000,
+                    edgeElasticity: 50,
+                    nestingFactor: 10,
+                    gravity: 40,
+                    numIter: 2000,
+                    initialTemp: 400,
+                    coolingFactor: 0.92,
+                    minTemp: 1.0,
+                    // 避免重叠
+                    nodeOverlap: 40,
+                    idealEdgeLength: 150
                 });
                 layout.run();
-                console.log('Layout applied');
+                console.log('Force-directed layout applied');
             } catch (e) {
                 console.error('Layout error:', e);
+                // 回退到网格布局
+                const fallbackLayout = cytoscapeInstance.layout({
+                    name: 'grid',
+                    fit: true,
+                    padding: 30
+                });
+                fallbackLayout.run();
             }
         }
 
@@ -399,7 +688,10 @@ createApp({
             truncateId,
             formatLogData,
             handleMessageFlow,
-            handleAgentActivated
+            handleAgentActivated,
+            fitTopology,
+            resetLayout,
+            toggleLayout
         };
     }
 }).mount('#app');

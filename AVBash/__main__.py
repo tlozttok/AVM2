@@ -29,6 +29,8 @@ async def main():
     print("  - 输入 // 表示字面的 / 字符")
     print("  - Ctrl+C 退出")
     print()
+    print("提示：输入 /manual 查看完整使用手册")
+    print()
 
     # 创建终端管理器（不指定 cols，使用终端实际宽度）
     term = TerminalManager(fps=10)

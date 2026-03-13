@@ -7,11 +7,79 @@
 import asyncio
 import os
 import pty
+import random
 import re
 import time
 from typing import Optional, Callable, Dict, List
 
 from utils.logger import LoggerFactory
+
+
+# AVBash 使用手册
+MANUAL_TEXT = """
+╔══════════════════════════════════════════════════════════════════╗
+║                     AVBash 多窗口终端 - 使用手册                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+【简介】
+AVBash 是 AVM2 多代理系统的多窗口终端组件，提供基于伪终端(pty)的多窗口
+Shell 管理能力。每个窗口运行独立的 bash 进程，支持实时流式输入输出。
+
+【基本操作】
+  • 普通文本输入会被缓存，等待直接发送到当前焦点窗口的 Shell（尽量不要输入多行内容）
+  • 以换行符为结尾的输入会触发缓存发送给Shell，使命令执行
+  • 以 / 开头的命令为控制命令（如 /help、/new）
+  • 输入 // 可表示字面的 / 字符（转义）
+  • Ctrl+C 退出终端
+
+【窗口管理命令】
+  /new [标题]          创建新窗口，可指定窗口标题
+  /kill [id]           关闭指定窗口（省略id则关闭当前窗口）
+  /focus <id>          切换焦点到指定窗口
+  /list                列出所有窗口及其状态
+  /title [新标题]       查看或设置当前窗口标题
+
+【导航与查看】
+  /scroll up|down [n]  向上/向下滚动 n 行（默认10行）
+  /search <模式>        在当前窗口历史中搜索匹配内容
+  /resize <行> <列>     调整当前窗口大小
+
+【输入控制】
+  /enter               提交当前输入（等同于回车）
+  /help                显示简短命令帮助
+  /manual              显示本手册
+
+【窗口状态说明】
+  ► 标记表示当前焦点窗口
+  状态显示：空闲/运行中/成功/报错/已退出
+  非焦点窗口显示最后命令和最后输出的摘要
+
+【使用示例】
+  1. 创建新窗口：       /new 我的项目
+  2. 在新窗口执行命令：  ls -la
+  3. 切换回主窗口：     /focus 1
+  4. 查看所有窗口：     /list
+  5. 搜索历史输出：     /search error
+
+【注意事项】
+  • 终端使用帧率控制渲染（默认10 FPS），大量输出时可能有轻微延迟
+  • 窗口大小默认为终端实际宽度，可手动调整
+  • 关闭窗口会终止该窗口的所有进程
+  • 消息区显示最近5条系统消息
+
+【与 Agent 系统集成】
+AVBash 可通过 TerminalInputAgent 和 TerminalOutputAgent 接入 AVM2 Agent
+网络，使 AI Agent 能够观察和控制终端会话。
+
+╔══════════════════════════════════════════════════════════════════╗
+║  提示：输入 /help 查看简短命令列表，按 Ctrl+C 退出终端            ║
+╚══════════════════════════════════════════════════════════════════╝
+"""
+
+# 随机提示列表
+TIPS = [
+    "💡 输入 /help 查看简单命令帮助，输入 /manual 查看详细文档",
+]
 
 
 # ANSI 转义码正则表达式
@@ -332,7 +400,8 @@ class TerminalManager:
             "search <pattern>": "搜索历史",
             "title [new_title]": "设置/查看标题",
             "resize <rows> <cols>": "调整窗口大小",
-            "help": "显示帮助",
+            "help": "显示简短帮助",
+            "manual": "显示详细使用手册",
         }
 
         # 消息输出回调（用于发送 info/error 消息）
@@ -344,6 +413,9 @@ class TerminalManager:
         # 消息缓冲区 - 存储最近的控制命令反馈消息
         self.message_buffer: List[str] = []
         self.max_message_lines: int = 5  # 最多显示的消息行数
+
+        # 当前显示的 tip
+        self.current_tip: str = random.choice(TIPS)
 
     def create_agents(self):
         """创建用于接入 Agent 网络的 InputAgent 和 OutputAgent 子类"""
@@ -504,6 +576,7 @@ class TerminalManager:
             "title": lambda: self._cmd_title(args),
             "resize": lambda: self._cmd_resize(args),
             "help": lambda: self._cmd_help(),
+            "manual": lambda: self._cmd_manual(),
         }
 
         handler = handlers.get(cmd)
@@ -646,6 +719,18 @@ class TerminalManager:
             # 缩短每行长度
             await self._send_info(f"  /{cmd}: {desc}")
 
+    async def _cmd_manual(self):
+        """显示详细使用手册"""
+        # 将手册内容逐行添加到消息缓冲区
+        for line in MANUAL_TEXT.strip().split('\n'):
+            await self._send_info(line)
+        # 更新提示，显示另一个不同的提示
+        self._refresh_tip()
+
+    def _refresh_tip(self):
+        """刷新当前提示"""
+        self.current_tip = random.choice(TIPS)
+
     # ==================== 窗口管理 ====================
 
     async def _create_window(self, title: str = None) -> Optional[Window]:
@@ -730,7 +815,10 @@ class TerminalManager:
         else:
             result.append("  (无消息)")
 
-        # 4. 输入显示区（最底部）
+        # 4. 提示区（随机提示）
+        result.append(f"-- {self.current_tip}")
+
+        # 5. 输入显示区（最底部）
         result.append(self._render_input_area())
 
         return '\n'.join(result)
