@@ -1,0 +1,17 @@
+# AVM2 (Agent Vector Machine 2) 依赖文件
+# 安装命令: pip install -r requirements.txt
+
+# LLM API 客户端
+openai>=1.0.0
+
+# 环境变量管理
+python-dotenv>=1.0.0
+
+# WebSocket 服务器（可视化监控）
+websockets>=12.0
+
+# 文件系统监控（日志监控）
+watchdog>=3.0.0
+
+# YAML 配置解析
+PyYAML>=6.0.0
