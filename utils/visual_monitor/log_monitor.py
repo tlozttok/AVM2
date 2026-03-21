@@ -207,11 +207,12 @@ class LogMonitor:
             old_keyword = data.get('old_keyword', '')
             new_keyword = data.get('new_keyword', '')
             current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
-            # 查找并更新所有指向 current_id、keyword 为 old_keyword 的输入连接
+            # 只更新当前 Agent 的输入连接（type=input 或兼容无 type 字段）
+            # 注意：不再同步更新对方的输出连接，遵循连接词典独立原则
             updated = False
             for conn in self.connections:
                 conn_type = conn.get('type')
-                # 兼容旧数据：如果没有 type 字段或 type 为 input，且 to 匹配
+                # 只更新指向 current_id、keyword 为 old_keyword 的输入连接
                 if (conn_type is None or conn_type == 'input') and conn['to'] == current_id and conn['keyword'] == old_keyword:
                     conn['keyword'] = new_keyword
                     conn['type'] = 'input'  # 确保设置 type
@@ -224,11 +225,12 @@ class LogMonitor:
             old_keyword = data.get('old_keyword', '')
             new_keyword = data.get('new_keyword', '')
             current_id = source.replace('Agent.', '').replace('InputAgent.', '').replace('OutputAgent.', '')
-            # 查找并更新所有从 current_id 出发、keyword 为 old_keyword 的输出连接
+            # 只更新当前 Agent 的输出连接（type=output 或兼容无 type 字段）
+            # 注意：不再同步更新对方的输入连接，遵循连接词典独立原则
             updated = False
             for conn in self.connections:
                 conn_type = conn.get('type')
-                # 兼容旧数据：如果没有 type 字段或 type 为 output，且 from 匹配
+                # 只更新从 current_id 出发、keyword 为 old_keyword 的输出连接
                 if (conn_type is None or conn_type == 'output') and conn['from'] == current_id and conn['keyword'] == old_keyword:
                     conn['keyword'] = new_keyword
                     conn['type'] = 'output'  # 确保设置 type

@@ -363,10 +363,7 @@ class Agent(Loggable):
             if keyword == old_keyword:
                 new_connections.append((sender_id, new_keyword))
                 updated = True
-                # 通知发送方更新其输出连接
-                agent = self.system.get_agent(sender_id)
-                if agent:
-                    agent.update_output_connection_keyword_for_receiver(self.id, old_keyword, new_keyword)
+                # 只修改自己的词典，不通知发送方
             else:
                 new_connections.append((sender_id, keyword))
 
@@ -387,10 +384,7 @@ class Agent(Loggable):
             if keyword == old_keyword:
                 new_connections.append((new_keyword, receiver_id))
                 updated = True
-                # 通知接收方更新其输入连接
-                agent = self.system.get_agent(receiver_id)
-                if agent:
-                    agent.update_input_connection_keyword_for_sender(self.id, old_keyword, new_keyword)
+                # 只修改自己的词典，不通知接收方
             else:
                 new_connections.append((keyword, receiver_id))
 
