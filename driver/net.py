@@ -143,7 +143,7 @@ class AgentNetwork:
             io_agent.output_connections.append(target_agent.id)
             target_agent.set_input_connection(
                 io_agent.id,
-                "系统感知输入（无法删除）",
+                "[系统输入]终端界面（无法删除）",
                 protected=True
             )
             self.input_agents.append(io_agent)
@@ -151,7 +151,7 @@ class AgentNetwork:
 
         elif isinstance(io_agent, OutputAgent):
             # OutputAgent 接收网络数据，需要设置输入连接从目标 Agent 接收
-            keyword = "系统操作输出（无法删除）（向该连接发送数据以进行操作）"
+            keyword = "[系统输出]终端的输入流（无法删除）（向该连接发送数据以进行操作）"
             target_agent.set_output_connection(io_agent.id, keyword, protected=True)
             io_agent.input_connections.append(target_agent.id)
             self.output_agents.append(io_agent)

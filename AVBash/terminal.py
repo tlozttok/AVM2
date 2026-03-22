@@ -508,26 +508,26 @@ class TerminalManager:
         # 处理转义：// → 特殊标记（用于字面的 /）
         text = text.replace("//", "\x00ESCAPED_SLASH\x00")
 
-        # 检查是否以换行符结尾（表示需要提交）
-        should_submit = text.endswith('\n')
-
-        # 按行分割处理
+        # 按行分割处理（保留空行以识别多行命令）
         lines = text.split('\n')
 
         for i, line in enumerate(lines):
             # 恢复转义的 /
             line = line.replace("\x00ESCAPED_SLASH\x00", "/")
 
-            # 跳过空行（通常是换行符分割产生的）
-            if not line:
-                continue
+            # 如果不是最后一行，说明有换行符（需要提交）
+            is_last_line = (i == len(lines) - 1)
+            should_submit = not is_last_line or text.endswith('\n')
 
-            # 逐字符输入时，直接添加到缓冲区（不检查是否为命令）
-            self.global_input_buffer += line
+            if line:
+                # 有内容的行，添加到缓冲区
+                self.global_input_buffer += line
 
-        # 回车时检查和执行命令
-        if should_submit:
-            await self._handle_submit()
+            if should_submit:
+                # 需要提交（换行触发）
+                await self._handle_submit()
+                # 提交后清空缓冲区，准备下一行
+                self.global_input_buffer = ""
 
     def _submit_global_input(self):
         """提交全局输入缓冲区内容到焦点窗口"""
@@ -545,7 +545,6 @@ class TerminalManager:
         if self.global_input_buffer.startswith('/'):
             # 控制命令：执行命令
             command_str = self.global_input_buffer[1:]  # 去掉开头的 /
-            self.global_input_buffer = ""  # 清空缓冲区
             await self._execute_command(command_str)
         else:
             # 普通输入：提交到焦点窗口的 shell

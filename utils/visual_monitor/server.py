@@ -97,11 +97,9 @@ class MonitorServer:
     async def broadcast(self, data: dict):
         """广播数据到所有连接"""
         if not self.connections:
-            print(f"[Broadcast] No connections to broadcast to")
             return
 
         message = json.dumps(data)
-        print(f"[Broadcast] Broadcasting to {len(self.connections)} clients: {data.get('type', 'unknown')}")
         await asyncio.gather(
             *[ws.send(message) for ws in self.connections],
             return_exceptions=True
@@ -126,14 +124,10 @@ class MonitorServer:
         level = entry.get('level', 'info')
         source = entry.get('source', '')
 
-        print(f"[Broadcast] Processing entry: event_type={event_type}, source={source}")
-
         # 拓扑更新（已有）
         if event_type in ['agent_created', 'input_connection_set', 'output_connection_set',
                           'input_connection_keyword_updated', 'output_connection_keyword_updated']:
-            print(f"[Broadcast] Broadcasting topology_update for {event_type}")
             topology = self.monitor.get_topology()
-            print(f"[Broadcast] Topology has {len(topology['connections'])} connections")
             await self.broadcast({
                 'type': 'topology_update',
                 'topology': topology

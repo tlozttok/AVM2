@@ -434,7 +434,7 @@ class Agent(Loggable):
 
     async def process_response(self, response):
         """解析并处理 LLM 响应"""
-        pattern = re.compile(r"<(\w+)>(.*?)</\1>", re.DOTALL)
+        pattern = re.compile(r"<(.+?)>(.*?)</\1>", re.DOTALL)
         matches = pattern.findall(response)
 
         state_updates = 0
