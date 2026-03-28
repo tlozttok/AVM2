@@ -73,7 +73,7 @@ class MainApplication:
         self.system = AgentSystem()
 
         # 设置系统运行频率：10秒一次调用
-        self.system.set_message_delay(10.0)
+        self.system.set_message_delay(1.0)
         print("  系统消息延迟: 10s")
 
         # 5. 创建 Agent 网络
